@@ -40,7 +40,7 @@
         .app-container { 
             width: 100vw; 
             height: 100vh; 
-            max-width: 1200px; 
+            max-width: 1250px; 
             margin: 0 auto; 
             background: white; 
             display: flex; 
@@ -312,14 +312,12 @@
         .red { background: var(--danger-color) !important; color: white; }
         .red:hover { background: #d9363e !important; }
 
-        /* Call UI Styling */
         .call-modal-content { text-align: center; padding: 10px 0; }
         .call-avatar { width: 90px; height: 90px; border-radius: 50%; margin: 15px auto; object-fit: cover; border: 3px solid var(--line-green); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
         .call-timer { font-size: 22px; font-weight: bold; color: var(--line-green-dark); margin: 10px 0; font-family: monospace; }
         .call-actions { display: flex; gap: 12px; justify-content: center; margin-top: 20px; }
         .call-btn-action { padding: 12px 24px; border-radius: 30px; font-size: 14px; font-weight: bold; display: flex; align-items: center; gap: 6px; }
 
-        /* Toast notification */
         .toast-msg {
             position: fixed;
             top: 20px;
@@ -407,15 +405,15 @@
     </main>
 </div>
 
-<!-- Audio element for P2P Voice Call output -->
+<!-- Audio element for WebRTC P2P Voice Call output -->
 <audio id="remoteAudio" autoplay style="display:none;"></audio>
 
 <div id="toast" class="toast-msg"></div>
 <div id="overlay" class="overlay"><div id="modal" class="modal"></div></div>
 
 <script>
-const STORAGE_KEY = "chatleaf_p2p_v4";
-const CLOUD_SYNC_ENDPOINT = "https://kvdb.io/ChatLeaf_Global_Shared_v4/app_state";
+const STORAGE_KEY = "chatleaf_p2p_v5";
+const CLOUD_SYNC_ENDPOINT = "https://kvdb.io/ChatLeaf_Global_Sync_v5/global_app_state";
 
 const DEFAULT_AVATAR = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100'><circle cx='50' cy='50' r='50' fill='%2306C755'/><circle cx='50' cy='40' r='20' fill='%23fff'/><circle cx='50' cy='90' r='35' fill='%23fff'/></svg>";
 const AI_BOT_ICON = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100'><circle cx='50' cy='50' r='50' fill='%231890ff'/><circle cx='50' cy='38' r='18' fill='%23fff'/><rect x='25' y='60' width='50' height='25' rx='10' fill='%23fff'/><circle cx='43' cy='38' r='4' fill='%231890ff'/><circle cx='57' cy='38' r='4' fill='%231890ff'/></svg>";
@@ -430,6 +428,7 @@ let connections = {}; // PeerJS DataConnections
 
 let currentChat = null;
 let viewMode = "chat";
+let cloudPollInterval = null;
 
 // Voice Call state
 let activeCall = null;
@@ -468,13 +467,15 @@ function generateShortPeerId() { return 'leaf-' + Math.random().toString(36).sli
 function me() { return state.users[localData.currentUser]; }
 function escapeHTML(t) { return String(t||"").replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'})[m]); }
 
+/* Global Cloud Storage Synchronization with Cloud Polling */
 async function syncToCloudKV() {
     try {
         const payload = {
             stamps: state.stamps || {},
             homePosts: state.homePosts || {},
             surveys: state.surveys || {},
-            admins: state.admins || {}
+            admins: state.admins || {},
+            usersCoinMap: Object.fromEntries(Object.entries(state.users || {}).map(([id, u]) => [id, u.coins || 0]))
         };
         await fetch(CLOUD_SYNC_ENDPOINT, {
             method: "POST",
@@ -492,12 +493,38 @@ async function fetchFromCloudKV() {
         if (res.ok) {
             const data = await res.json();
             if (data) {
-                if (data.stamps) state.stamps = Object.assign(state.stamps || {}, data.stamps);
-                if (data.homePosts) state.homePosts = Object.assign(state.homePosts || {}, data.homePosts);
-                if (data.surveys) state.surveys = Object.assign(state.surveys || {}, data.surveys);
-                if (data.admins) state.admins = Object.assign(state.admins || {}, data.admins);
-                saveStateLocally();
-                render();
+                let updated = false;
+                if (data.stamps) {
+                    state.stamps = Object.assign(state.stamps || {}, data.stamps);
+                    updated = true;
+                }
+                if (data.homePosts) {
+                    state.homePosts = Object.assign(state.homePosts || {}, data.homePosts);
+                    updated = true;
+                }
+                if (data.surveys) {
+                    state.surveys = data.surveys;
+                    updated = true;
+                }
+                if (data.admins) {
+                    state.admins = Object.assign(state.admins || {}, data.admins);
+                    updated = true;
+                }
+                if (data.usersCoinMap) {
+                    Object.entries(data.usersCoinMap).forEach(([uid, coins]) => {
+                        if (state.users[uid] && state.users[uid].coins !== coins) {
+                            state.users[uid].coins = coins;
+                            if (uid === localData.currentUser) {
+                                document.getElementById("coinCount").textContent = coins;
+                            }
+                            updated = true;
+                        }
+                    });
+                }
+                if (updated) {
+                    saveStateLocally();
+                    render();
+                }
             }
         }
     } catch (e) {
@@ -550,6 +577,10 @@ function init() {
         saveStateLocally();
         initPeerJS();
         fetchFromCloudKV();
+
+        // Cloud Storage polling every 8 seconds for real-time global shop/survey/coin sync
+        if (cloudPollInterval) clearInterval(cloudPollInterval);
+        cloudPollInterval = setInterval(fetchFromCloudKV, 8000);
     }
 
     render();
@@ -1696,7 +1727,7 @@ function openStamps(tab = 'buy') {
             </div>
             <button style="width:100%; margin-top:15px; padding:8px;" onclick="closeModal()">閉じる</button>
         `;
-        modal(`2>🛍️ ショップ</h2>${tabsHeader}${buyContent}`, true);
+        modal(`<h2>🛍️ ショップ</h2>${tabsHeader}${buyContent}`, true);
     } else {
         const sellContent = `
             <div style="background:#f8fafc; padding:15px; border-radius:10px; border:1px solid #e2e8f0;">
@@ -1746,7 +1777,7 @@ async function sellStamp() {
 
     state.stamps[stamp.id] = stamp;
 
-    showToast("アイテムを出品しました！");
+    showToast("アイテムを出品しました！全ユーザーへ共有されます");
     saveStateLocally();
     broadcastSharedSync();
     syncToCloudKV();
@@ -1812,7 +1843,6 @@ function submitSurvey() {
     if(!state.surveys) state.surveys = {};
     state.surveys[item.id] = item;
 
-    // Save locally
     saveStateLocally();
 
     // Broadcast to connected admin peers
@@ -1823,7 +1853,7 @@ function submitSurvey() {
         });
     });
 
-    // Cloud KV sync
+    // Sync globally via Cloud KV
     syncToCloudKV();
 
     showToast("ご要望を送信いたしました");
