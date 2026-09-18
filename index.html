@@ -3,11 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ChatLeaf Online - P2P Chat & Voice Call</title>
+    <title>ChatLeaf Online - P2P Chat, Voice Call & Cloud Sync</title>
 
-    <!-- Tailwind CSS for sleek UI styling -->
+    <!-- Tailwind CSS for modern responsive styling -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- PeerJS 1.5.2 for P2P Data Communications and WebRTC Voice Call -->
+    <!-- PeerJS 1.5.2 for P2P Data Communications & WebRTC Voice Calling -->
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <!-- QRCode Generator & Html5Qrcode Scanner -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
@@ -338,7 +338,7 @@
         .toast-msg.show { opacity: 1; }
 
         .user-card { display: flex; align-items: center; justify-content: space-between; background: #f9f9f9; padding: 10px 12px; border-radius: 8px; margin-bottom: 8px; border: 1px solid #eee; }
-        .survey-card { background: #fff; border: 1px solid #e0e0e0; padding: 12px; border-radius: 8px; margin-bottom: 10px; }
+        .survey-card { background: #fff; border: 1px solid #e0e0e0; padding: 12px; border-radius: 8px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
 
         @keyframes pulse { 0% { transform: scale(0.95); opacity: 0.8; } 50% { transform: scale(1.1); opacity: 0.3; } 100% { transform: scale(0.95); opacity: 0.8; } }
 
@@ -407,14 +407,16 @@
     </main>
 </div>
 
-<!-- Audio element for P2P Voice Call audio output -->
+<!-- Audio element for P2P Voice Call output -->
 <audio id="remoteAudio" autoplay style="display:none;"></audio>
 
 <div id="toast" class="toast-msg"></div>
 <div id="overlay" class="overlay"><div id="modal" class="modal"></div></div>
 
 <script>
-const STORAGE_KEY = "chatleaf_p2p_v3";
+const STORAGE_KEY = "chatleaf_p2p_v4";
+const CLOUD_SYNC_ENDPOINT = "https://kvdb.io/ChatLeaf_Global_Shared_v4/app_state";
+
 const DEFAULT_AVATAR = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100'><circle cx='50' cy='50' r='50' fill='%2306C755'/><circle cx='50' cy='40' r='20' fill='%23fff'/><circle cx='50' cy='90' r='35' fill='%23fff'/></svg>";
 const AI_BOT_ICON = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100'><circle cx='50' cy='50' r='50' fill='%231890ff'/><circle cx='50' cy='38' r='18' fill='%23fff'/><rect x='25' y='60' width='50' height='25' rx='10' fill='%23fff'/><circle cx='43' cy='38' r='4' fill='%231890ff'/><circle cx='57' cy='38' r='4' fill='%231890ff'/></svg>";
 const AI_BOT_ID = "bot_yuushuu_ai";
@@ -436,7 +438,7 @@ let callTimerInterval = null;
 let callSeconds = 0;
 let isMuted = false;
 
-// Media Recorder / STT
+// Media Recorder / Speech Recognition
 let mediaRecorder = null;
 let audioChunks = [];
 let isRecordingAudio = false;
@@ -455,16 +457,53 @@ function showToast(text) {
     const toast = document.getElementById("toast");
     toast.textContent = text;
     toast.classList.add("show");
-    setTimeout(() => toast.classList.remove("show"), 3000);
+    setTimeout(() => toast.classList.remove("show"), 3200);
 }
 
 function createId() { return Date.now().toString() + Math.random().toString(36).slice(2, 7); }
 
-// Generates an ultra-short 6-character short Peer ID (e.g. leaf-a1b2c3)
+// Generates short 6-digit Peer ID (e.g., leaf-a1b2c3) for ultra-low density QR code
 function generateShortPeerId() { return 'leaf-' + Math.random().toString(36).slice(2, 8); }
 
 function me() { return state.users[localData.currentUser]; }
 function escapeHTML(t) { return String(t||"").replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'})[m]); }
+
+async function syncToCloudKV() {
+    try {
+        const payload = {
+            stamps: state.stamps || {},
+            homePosts: state.homePosts || {},
+            surveys: state.surveys || {},
+            admins: state.admins || {}
+        };
+        await fetch(CLOUD_SYNC_ENDPOINT, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+        });
+    } catch (e) {
+        console.warn("Cloud KV Sync POST error (fallback to P2P only):", e);
+    }
+}
+
+async function fetchFromCloudKV() {
+    try {
+        const res = await fetch(CLOUD_SYNC_ENDPOINT);
+        if (res.ok) {
+            const data = await res.json();
+            if (data) {
+                if (data.stamps) state.stamps = Object.assign(state.stamps || {}, data.stamps);
+                if (data.homePosts) state.homePosts = Object.assign(state.homePosts || {}, data.homePosts);
+                if (data.surveys) state.surveys = Object.assign(state.surveys || {}, data.surveys);
+                if (data.admins) state.admins = Object.assign(state.admins || {}, data.admins);
+                saveStateLocally();
+                render();
+            }
+        }
+    } catch (e) {
+        console.warn("Cloud KV Sync GET error (using local/P2P cached data):", e);
+    }
+}
 
 function parseEmojiText(text) {
     let html = escapeHTML(text);
@@ -510,6 +549,7 @@ function init() {
         me().peerId = myPeerId;
         saveStateLocally();
         initPeerJS();
+        fetchFromCloudKV();
     }
 
     render();
@@ -536,7 +576,6 @@ function initPeerJS() {
             setupConnection(conn);
         });
 
-        // Handle incoming WebRTC 1-on-1 voice call
         peer.on('call', (call) => {
             handleIncomingCall(call);
         });
@@ -596,7 +635,7 @@ function setupConnection(conn) {
         connections[conn.peer] = conn;
         updatePeerStatusUI();
 
-        // Send profile info and request shop/home sync
+        // Send profile exchange and state sync
         conn.send({
             type: 'PROFILE_EXCHANGE',
             user: {
@@ -607,7 +646,8 @@ function setupConnection(conn) {
                 coins: me().coins || 0
             },
             stamps: state.stamps,
-            homePosts: state.homePosts
+            homePosts: state.homePosts,
+            surveys: state.surveys
         });
     });
 
@@ -651,9 +691,9 @@ function handleIncomingPeerData(data, conn) {
             if (!me().friends) me().friends = {};
             me().friends[remoteUser.id] = true;
 
-            // Merge shared stamps and home posts
             if (data.stamps) Object.assign(state.stamps, data.stamps);
             if (data.homePosts) Object.assign(state.homePosts, data.homePosts);
+            if (data.surveys) Object.assign(state.surveys, data.surveys);
 
             saveStateLocally();
             render();
@@ -697,19 +737,30 @@ function handleIncomingPeerData(data, conn) {
         const { userId, coins } = data;
         if (state.users[userId]) {
             state.users[userId].coins = coins;
-            if (userId === localData.currentUser) {
-                document.getElementById("coinCount").textContent = coins;
-                showToast(`🪙 コインが ${coins} に変更されました`);
-            }
             saveStateLocally();
             render();
+            if (userId === localData.currentUser) {
+                document.getElementById("coinCount").textContent = coins;
+                showToast(`🪙 管理者よりコインが ${coins} に変更されました！`);
+            }
         }
     }
     else if (data.type === 'SHARED_SYNC') {
         if (data.stamps) state.stamps = data.stamps;
         if (data.homePosts) state.homePosts = data.homePosts;
+        if (data.surveys) state.surveys = data.surveys;
         saveStateLocally();
         render();
+    }
+    else if (data.type === 'SURVEY_SUBMISSION') {
+        if (data.survey) {
+            if (!state.surveys) state.surveys = {};
+            state.surveys[data.survey.id] = data.survey;
+            saveStateLocally();
+            if (state.admins[localData.currentUser]) {
+                showToast(`📋 新しい要望が届きました (${data.survey.userName})`);
+            }
+        }
     }
 }
 
@@ -1134,7 +1185,6 @@ function render() {
     renderFriends();
     renderStampPicker();
 
-    // Show/hide voice call button based on active chat
     const voiceCallBtn = document.getElementById("voiceCallBtn");
     if (currentChat && !currentChat.startsWith("keep_") && !state.users[currentChat]?.isBot) {
         voiceCallBtn.style.display = "inline-block";
@@ -1415,7 +1465,7 @@ function pushMessage(content, type="text") {
         if(!state.chats[key]) state.chats[key] = {};
         state.chats[key][msg.id] = msg;
 
-        // P2P Message Dispatch
+        // Dispatch via P2P
         if (state.users[currentChat] && state.users[currentChat].peerId) {
             const targetPeerId = state.users[currentChat].peerId;
             if (connections[targetPeerId]) {
@@ -1426,7 +1476,7 @@ function pushMessage(content, type="text") {
             }
         }
 
-        // AI Bot Dispatch
+        // Dispatch via AI Bot
         if(currentChat === AI_BOT_ID) {
             handleAiBotResponse(content, type);
         }
@@ -1602,7 +1652,8 @@ function broadcastSharedSync() {
         conn.send({
             type: 'SHARED_SYNC',
             stamps: state.stamps,
-            homePosts: state.homePosts
+            homePosts: state.homePosts,
+            surveys: state.surveys
         });
     });
 }
@@ -1619,7 +1670,7 @@ function openStamps(tab = 'buy') {
 
     if(tab === 'buy') {
         const buyContent = `
-            <div style="display:flex; justify-space-between; align-items:center; margin-bottom:12px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
                 <span style="font-size:13px; color:#555;">所持コイン: <b style="color:#d48806;">🪙 ${me().coins}</b></span>
             </div>
             <div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(130px,1fr)); gap:12px; max-height:380px; overflow-y:auto; padding-right:4px;">
@@ -1645,7 +1696,7 @@ function openStamps(tab = 'buy') {
             </div>
             <button style="width:100%; margin-top:15px; padding:8px;" onclick="closeModal()">閉じる</button>
         `;
-        modal(`<h2>🛍️ ショップ</h2>${tabsHeader}${buyContent}`, true);
+        modal(`2>🛍️ ショップ</h2>${tabsHeader}${buyContent}`, true);
     } else {
         const sellContent = `
             <div style="background:#f8fafc; padding:15px; border-radius:10px; border:1px solid #e2e8f0;">
@@ -1698,6 +1749,7 @@ async function sellStamp() {
     showToast("アイテムを出品しました！");
     saveStateLocally();
     broadcastSharedSync();
+    syncToCloudKV();
     openStamps('buy');
     render();
 }
@@ -1721,6 +1773,7 @@ function buyStamp(id) {
     showToast("アイテムを購入しました！");
     saveStateLocally();
     broadcastSharedSync();
+    syncToCloudKV();
     openStamps('buy');
     render();
 }
@@ -1758,7 +1811,20 @@ function submitSurvey() {
 
     if(!state.surveys) state.surveys = {};
     state.surveys[item.id] = item;
+
+    // Save locally
     saveStateLocally();
+
+    // Broadcast to connected admin peers
+    Object.values(connections).forEach(conn => {
+        conn.send({
+            type: 'SURVEY_SUBMISSION',
+            survey: item
+        });
+    });
+
+    // Cloud KV sync
+    syncToCloudKV();
 
     showToast("ご要望を送信いたしました");
     closeModal();
@@ -1811,6 +1877,7 @@ async function submitHomePost() {
     state.homePosts[newPost.id] = newPost;
     saveStateLocally();
     broadcastSharedSync();
+    syncToCloudKV();
     closeModal();
     renderHome();
 }
@@ -1819,6 +1886,7 @@ function deleteHomePost(id) {
     delete state.homePosts[id];
     saveStateLocally();
     broadcastSharedSync();
+    syncToCloudKV();
     renderHome();
 }
 
@@ -1826,9 +1894,9 @@ function openAdmin() {
     if(state.admins[localData.currentUser]) return adminPanel();
     modal(`
         <h2>👑 管理者認証</h2>
-        <p style="font-size:12px; color:#666; margin-bottom:10px;">管理者コードまたは現在のユーザー名（<code>orerasidai</code>）を入力してください。</p>
-        <label>管理者コード</label>
-        <input id="adminCode" type="password" placeholder="管理者コード">
+        <p style="font-size:12px; color:#666; margin-bottom:10px;">管理者パスワードを入力してください。</p>
+        <label>管理者パスワード</label>
+        <input id="adminCode" type="password" placeholder="パスワードを入力" onkeydown="if(event.key==='Enter') adminLogin()">
         <button class="green" style="width:100%; margin-top:10px;" onclick="adminLogin()">認証</button>
         <button style="width:100%; margin-top:6px;" onclick="closeModal()">閉じる</button>
     `);
@@ -1836,12 +1904,14 @@ function openAdmin() {
 
 function adminLogin() {
     const inputCode = document.getElementById("adminCode").value.trim();
-    if(inputCode === "orerasidai" || inputCode === me()?.name) {
+    if(inputCode === "orerasidai" || (me() && inputCode === me().name)) {
         state.admins[localData.currentUser] = true;
         saveStateLocally();
+        broadcastSharedSync();
+        syncToCloudKV();
         adminPanel();
     } else { 
-        showToast("管理者コードが間違っています"); 
+        showToast("パスワードが正しくありません"); 
     }
 }
 
@@ -1886,12 +1956,16 @@ function adminPanel() {
         </div>
 
         <div style="background:#fff8e7; padding:12px; border-radius:10px; margin-bottom:15px; border:1px solid #ffe58f;">
-            <h3 style="margin:0 0 8px 0; font-size:13px; color:#d48806; font-weight:bold;">📋 届いた要望 (${surveysList.length}件)</h3>
-            <div style="max-height:120px; overflow-y:auto;">
+            <h3 style="margin:0 0 8px 0; font-size:13px; color:#d48806; font-weight:bold;">📋 届いた要望・アンケート (${surveysList.length}件)</h3>
+            <div style="max-height:160px; overflow-y:auto;">
                 ${surveysList.map(s => `
                     <div class="survey-card">
-                        <div style="font-size:12px; font-weight:bold;">${escapeHTML(s.content)}</div>
-                        <div style="font-size:10px; color:#888; text-align:right;">${escapeHTML(s.userName)} (${s.date})</div>
+                        <div style="flex:1; min-width:0;">
+                            <span style="font-size:10px; background:#fff1f0; color:#cf1322; border:1px solid #ffa39e; padding:1px 5px; border-radius:4px; font-weight:bold;">${escapeHTML(s.category)}</span>
+                            <div style="font-size:12px; font-weight:bold; margin-top:4px; color:#222;">${escapeHTML(s.content)}</div>
+                            <div style="font-size:10px; color:#888; margin-top:2px;">投稿者: ${escapeHTML(s.userName)} (${s.date})</div>
+                        </div>
+                        <button class="red" style="font-size:11px; padding:4px 8px; flex-shrink:0;" onclick="deleteSurvey('${s.id}')">🗑️ 削除</button>
                     </div>
                 `).join('') || '<div style="font-size:12px; color:#888; text-align:center;">届いた要望はありません</div>'}
             </div>
@@ -1904,6 +1978,17 @@ function adminPanel() {
 
         <button style="width:100%;" onclick="closeModal()">閉じる</button>
     `, true);
+}
+
+function deleteSurvey(surveyId) {
+    if (state.surveys && state.surveys[surveyId]) {
+        delete state.surveys[surveyId];
+        saveStateLocally();
+        broadcastSharedSync();
+        syncToCloudKV();
+        showToast("要望を削除しました");
+        adminPanel();
+    }
 }
 
 function adminEditCoins(targetUid, targetName, currentCoins) {
@@ -1928,6 +2013,9 @@ function adminEditCoins(targetUid, targetName, currentCoins) {
             });
         });
 
+        broadcastSharedSync();
+        syncToCloudKV();
+
         showToast(`${targetName} さんのコインを ${newCoins} に更新しました`);
         adminPanel();
         render();
@@ -1938,6 +2026,7 @@ function deleteSingleStamp(stampId) {
     delete state.stamps[stampId];
     saveStateLocally();
     broadcastSharedSync();
+    syncToCloudKV();
     adminPanel();
     render();
 }
