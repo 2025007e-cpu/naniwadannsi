@@ -40,7 +40,7 @@
         .app-container { 
             width: 100vw; 
             height: 100vh; 
-            max-width: 1250px; 
+            max-width: 1280px; 
             margin: 0 auto; 
             background: white; 
             display: flex; 
@@ -412,8 +412,7 @@
 <div id="overlay" class="overlay"><div id="modal" class="modal"></div></div>
 
 <script>
-const STORAGE_KEY = "chatleaf_p2p_v5";
-const CLOUD_SYNC_ENDPOINT = "https://kvdb.io/ChatLeaf_Global_Sync_v5/global_app_state";
+const STORAGE_KEY = "chatleaf_pub_v15";
 
 const DEFAULT_AVATAR = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100'><circle cx='50' cy='50' r='50' fill='%2306C755'/><circle cx='50' cy='40' r='20' fill='%23fff'/><circle cx='50' cy='90' r='35' fill='%23fff'/></svg>";
 const AI_BOT_ICON = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100'><circle cx='50' cy='50' r='50' fill='%231890ff'/><circle cx='50' cy='38' r='18' fill='%23fff'/><rect x='25' y='60' width='50' height='25' rx='10' fill='%23fff'/><circle cx='43' cy='38' r='4' fill='%231890ff'/><circle cx='57' cy='38' r='4' fill='%231890ff'/></svg>";
@@ -424,11 +423,10 @@ let state = localData.cachedState || { users: {}, chats: {}, stamps: {}, homePos
 
 let peer = null;
 let myPeerId = "";
-let connections = {}; // PeerJS DataConnections
+let connections = {}; // Active PeerJS DataConnections dictionary
 
 let currentChat = null;
 let viewMode = "chat";
-let cloudPollInterval = null;
 
 // Voice Call state
 let activeCall = null;
@@ -467,69 +465,16 @@ function generateShortPeerId() { return 'leaf-' + Math.random().toString(36).sli
 function me() { return state.users[localData.currentUser]; }
 function escapeHTML(t) { return String(t||"").replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'})[m]); }
 
-/* Global Cloud Storage Synchronization with Cloud Polling */
-async function syncToCloudKV() {
-    try {
-        const payload = {
-            stamps: state.stamps || {},
-            homePosts: state.homePosts || {},
-            surveys: state.surveys || {},
-            admins: state.admins || {},
-            usersCoinMap: Object.fromEntries(Object.entries(state.users || {}).map(([id, u]) => [id, u.coins || 0]))
-        };
-        await fetch(CLOUD_SYNC_ENDPOINT, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload)
-        });
-    } catch (e) {
-        console.warn("Cloud KV Sync POST error (fallback to P2P only):", e);
-    }
-}
-
-async function fetchFromCloudKV() {
-    try {
-        const res = await fetch(CLOUD_SYNC_ENDPOINT);
-        if (res.ok) {
-            const data = await res.json();
-            if (data) {
-                let updated = false;
-                if (data.stamps) {
-                    state.stamps = Object.assign(state.stamps || {}, data.stamps);
-                    updated = true;
-                }
-                if (data.homePosts) {
-                    state.homePosts = Object.assign(state.homePosts || {}, data.homePosts);
-                    updated = true;
-                }
-                if (data.surveys) {
-                    state.surveys = data.surveys;
-                    updated = true;
-                }
-                if (data.admins) {
-                    state.admins = Object.assign(state.admins || {}, data.admins);
-                    updated = true;
-                }
-                if (data.usersCoinMap) {
-                    Object.entries(data.usersCoinMap).forEach(([uid, coins]) => {
-                        if (state.users[uid] && state.users[uid].coins !== coins) {
-                            state.users[uid].coins = coins;
-                            if (uid === localData.currentUser) {
-                                document.getElementById("coinCount").textContent = coins;
-                            }
-                            updated = true;
-                        }
-                    });
-                }
-                if (updated) {
-                    saveStateLocally();
-                    render();
-                }
+function broadcastToPeers(packet) {
+    Object.values(connections).forEach(conn => {
+        if (conn && conn.open) {
+            try {
+                conn.send(packet);
+            } catch (e) {
+                console.warn("Failed to send packet to peer:", conn.peer, e);
             }
         }
-    } catch (e) {
-        console.warn("Cloud KV Sync GET error (using local/P2P cached data):", e);
-    }
+    });
 }
 
 function parseEmojiText(text) {
@@ -576,11 +521,6 @@ function init() {
         me().peerId = myPeerId;
         saveStateLocally();
         initPeerJS();
-        fetchFromCloudKV();
-
-        // Cloud Storage polling every 8 seconds for real-time global shop/survey/coin sync
-        if (cloudPollInterval) clearInterval(cloudPollInterval);
-        cloudPollInterval = setInterval(fetchFromCloudKV, 8000);
     }
 
     render();
@@ -666,9 +606,9 @@ function setupConnection(conn) {
         connections[conn.peer] = conn;
         updatePeerStatusUI();
 
-        // Send profile exchange and state sync
+        // Send full sync state upon connection open
         conn.send({
-            type: 'PROFILE_EXCHANGE',
+            type: 'SYNC_STATE',
             user: {
                 id: me().id,
                 peerId: myPeerId,
@@ -676,9 +616,9 @@ function setupConnection(conn) {
                 icon: me().icon,
                 coins: me().coins || 0
             },
-            stamps: state.stamps,
-            homePosts: state.homePosts,
-            surveys: state.surveys
+            stamps: state.stamps || {},
+            homePosts: state.homePosts || {},
+            surveys: state.surveys || {}
         });
     });
 
@@ -701,9 +641,12 @@ function setupConnection(conn) {
 function handleIncomingPeerData(data, conn) {
     if (!data || !data.type) return;
 
-    if (data.type === 'PROFILE_EXCHANGE') {
+    if (data.type === 'SYNC_STATE') {
         const remoteUser = data.user;
         if (remoteUser && remoteUser.id) {
+            // Register conn under remote user ID for fast lookup
+            connections[remoteUser.id] = conn;
+
             if (!state.users[remoteUser.id]) {
                 state.users[remoteUser.id] = {
                     id: remoteUser.id,
@@ -731,37 +674,72 @@ function handleIncomingPeerData(data, conn) {
             showToast(`✨ ${remoteUser.name} さんと接続しました！`);
         }
     } 
-    else if (data.type === 'CHAT_MESSAGE') {
+    else if (data.type === 'CHAT_MSG') {
         const msg = data.message;
+        const chatKey = data.chatKey;
         const senderId = msg.from;
 
-        const key = [localData.currentUser, senderId].sort().join("_");
-        if (!state.chats[key]) state.chats[key] = {};
-        state.chats[key][msg.id] = msg;
+        if (!state.chats[chatKey]) state.chats[chatKey] = {};
+        state.chats[chatKey][msg.id] = msg;
+
+        // Auto add sender as friend if not registered
+        if (!me().friends) me().friends = {};
+        me().friends[senderId] = true;
 
         saveStateLocally();
-        if (currentChat === senderId) {
+
+        const activeChatKey = currentChat ? [localData.currentUser, currentChat].sort().join("_") : null;
+        if (activeChatKey === chatKey) {
             renderMessages();
         } else {
             showToast(`💬 ${state.users[senderId]?.name || '友達'} からメッセージ`);
         }
     }
     else if (data.type === 'REACTION_UPDATE') {
-        const { msgId, senderId, reactions } = data;
-        const key = [localData.currentUser, senderId].sort().join("_");
-        if (state.chats[key] && state.chats[key][msgId]) {
-            state.chats[key][msgId].reactions = reactions;
+        const { chatKey, msgId, reactions } = data;
+        if (state.chats[chatKey] && state.chats[chatKey][msgId]) {
+            state.chats[chatKey][msgId].reactions = reactions;
             saveStateLocally();
             renderMessages();
         }
     }
     else if (data.type === 'UNSEND_UPDATE') {
-        const { msgId, senderId } = data;
-        const key = [localData.currentUser, senderId].sort().join("_");
-        if (state.chats[key] && state.chats[key][msgId]) {
-            state.chats[key][msgId].unsent = true;
+        const { chatKey, msgId } = data;
+        if (state.chats[chatKey] && state.chats[chatKey][msgId]) {
+            state.chats[chatKey][msgId].unsent = true;
             saveStateLocally();
             renderMessages();
+        }
+    }
+    else if (data.type === 'SURVEY_SUBMISSION') {
+        if (data.survey) {
+            if (!state.surveys) state.surveys = {};
+            state.surveys[data.survey.id] = data.survey;
+            saveStateLocally();
+            if (state.admins[localData.currentUser]) {
+                showToast(`📋 新しい要望が届きました (${data.survey.userName})`);
+                if (document.getElementById("overlay").style.display === "flex") {
+                    adminPanel();
+                }
+            }
+        }
+    }
+    else if (data.type === 'SURVEY_DELETE') {
+        if (data.surveyId && state.surveys) {
+            delete state.surveys[data.surveyId];
+            saveStateLocally();
+            if (state.admins[localData.currentUser] && document.getElementById("overlay").style.display === "flex") {
+                adminPanel();
+            }
+        }
+    }
+    else if (data.type === 'STAMP_ADDED') {
+        if (data.stamp) {
+            if (!state.stamps) state.stamps = {};
+            state.stamps[data.stamp.id] = data.stamp;
+            saveStateLocally();
+            renderStampPicker();
+            showToast(`🛍️ 新しいショップアイテムが追加されました: ${data.stamp.name}`);
         }
     }
     else if (data.type === 'COIN_UPDATE') {
@@ -773,23 +751,6 @@ function handleIncomingPeerData(data, conn) {
             if (userId === localData.currentUser) {
                 document.getElementById("coinCount").textContent = coins;
                 showToast(`🪙 管理者よりコインが ${coins} に変更されました！`);
-            }
-        }
-    }
-    else if (data.type === 'SHARED_SYNC') {
-        if (data.stamps) state.stamps = data.stamps;
-        if (data.homePosts) state.homePosts = data.homePosts;
-        if (data.surveys) state.surveys = data.surveys;
-        saveStateLocally();
-        render();
-    }
-    else if (data.type === 'SURVEY_SUBMISSION') {
-        if (data.survey) {
-            if (!state.surveys) state.surveys = {};
-            state.surveys[data.survey.id] = data.survey;
-            saveStateLocally();
-            if (state.admins[localData.currentUser]) {
-                showToast(`📋 新しい要望が届きました (${data.survey.userName})`);
             }
         }
     }
@@ -1237,7 +1198,7 @@ function renderFriends() {
     );
 
     list.innerHTML = friends.map(u => {
-        const isOnline = u.peerId && connections[u.peerId];
+        const isOnline = u.peerId && (connections[u.peerId] || connections[u.id]);
         return `
             <div class="friend ${currentChat === u.id && viewMode === 'chat' ? 'active':''}" onclick="openChat('${u.id}')">
                 <img class="avatar" src="${escapeHTML(u.icon)}">
@@ -1425,7 +1386,7 @@ function openMessageMenu(msgId) {
 }
 
 function toggleReaction(msgId, emojiKey) {
-    const { msg } = getMessageContext(msgId);
+    const { msg, path: chatKey } = getMessageContext(msgId);
     if(!msg) return;
 
     if(!msg.reactions) msg.reactions = {};
@@ -1441,17 +1402,13 @@ function toggleReaction(msgId, emojiKey) {
         msg.reactions[emojiKey].push(uid);
     }
 
-    if (currentChat && state.users[currentChat]?.peerId) {
-        const targetPeerId = state.users[currentChat].peerId;
-        if (connections[targetPeerId]) {
-            connections[targetPeerId].send({
-                type: 'REACTION_UPDATE',
-                msgId: msgId,
-                senderId: localData.currentUser,
-                reactions: msg.reactions
-            });
-        }
-    }
+    broadcastToPeers({
+        type: 'REACTION_UPDATE',
+        chatKey: chatKey,
+        msgId: msgId,
+        senderId: localData.currentUser,
+        reactions: msg.reactions
+    });
 
     saveStateLocally();
     closeModal();
@@ -1459,20 +1416,16 @@ function toggleReaction(msgId, emojiKey) {
 }
 
 function unsendMessage(msgId) {
-    const { msg } = getMessageContext(msgId);
+    const { msg, path: chatKey } = getMessageContext(msgId);
     if(msg) {
         msg.unsent = true;
 
-        if (currentChat && state.users[currentChat]?.peerId) {
-            const targetPeerId = state.users[currentChat].peerId;
-            if (connections[targetPeerId]) {
-                connections[targetPeerId].send({
-                    type: 'UNSEND_UPDATE',
-                    msgId: msgId,
-                    senderId: localData.currentUser
-                });
-            }
-        }
+        broadcastToPeers({
+            type: 'UNSEND_UPDATE',
+            chatKey: chatKey,
+            msgId: msgId,
+            senderId: localData.currentUser
+        });
     }
 
     saveStateLocally();
@@ -1492,22 +1445,18 @@ function pushMessage(content, type="text") {
     };
 
     if(currentChat) {
-        const key = currentChat.startsWith("keep_") ? currentChat : [localData.currentUser, currentChat].sort().join("_");
-        if(!state.chats[key]) state.chats[key] = {};
-        state.chats[key][msg.id] = msg;
+        const chatKey = currentChat.startsWith("keep_") ? currentChat : [localData.currentUser, currentChat].sort().join("_");
+        if(!state.chats[chatKey]) state.chats[chatKey] = {};
+        state.chats[chatKey][msg.id] = msg;
 
-        // Dispatch via P2P
-        if (state.users[currentChat] && state.users[currentChat].peerId) {
-            const targetPeerId = state.users[currentChat].peerId;
-            if (connections[targetPeerId]) {
-                connections[targetPeerId].send({
-                    type: 'CHAT_MESSAGE',
-                    message: msg
-                });
-            }
-        }
+        // Broadcast chat message packet to all connected P2P peers
+        broadcastToPeers({
+            type: 'CHAT_MSG',
+            chatKey: chatKey,
+            message: msg
+        });
 
-        // Dispatch via AI Bot
+        // Trigger AI Bot response if chatting with bot
         if(currentChat === AI_BOT_ID) {
             handleAiBotResponse(content, type);
         }
@@ -1678,17 +1627,6 @@ function renderStampPicker() {
 
 function toggleStampPicker() { document.getElementById("stampPicker").classList.toggle("active"); }
 
-function broadcastSharedSync() {
-    Object.values(connections).forEach(conn => {
-        conn.send({
-            type: 'SHARED_SYNC',
-            stamps: state.stamps,
-            homePosts: state.homePosts,
-            surveys: state.surveys
-        });
-    });
-}
-
 function openStamps(tab = 'buy') {
     const stamps = Object.values(state.stamps);
 
@@ -1777,10 +1715,14 @@ async function sellStamp() {
 
     state.stamps[stamp.id] = stamp;
 
+    // Broadcast newly added stamp to all connected peers
+    broadcastToPeers({
+        type: 'STAMP_ADDED',
+        stamp: stamp
+    });
+
     showToast("アイテムを出品しました！全ユーザーへ共有されます");
     saveStateLocally();
-    broadcastSharedSync();
-    syncToCloudKV();
     openStamps('buy');
     render();
 }
@@ -1803,8 +1745,6 @@ function buyStamp(id) {
 
     showToast("アイテムを購入しました！");
     saveStateLocally();
-    broadcastSharedSync();
-    syncToCloudKV();
     openStamps('buy');
     render();
 }
@@ -1845,16 +1785,11 @@ function submitSurvey() {
 
     saveStateLocally();
 
-    // Broadcast to connected admin peers
-    Object.values(connections).forEach(conn => {
-        conn.send({
-            type: 'SURVEY_SUBMISSION',
-            survey: item
-        });
+    // Broadcast survey submission packet to all connected peers
+    broadcastToPeers({
+        type: 'SURVEY_SUBMISSION',
+        survey: item
     });
-
-    // Sync globally via Cloud KV
-    syncToCloudKV();
 
     showToast("ご要望を送信いたしました");
     closeModal();
@@ -1906,8 +1841,6 @@ async function submitHomePost() {
 
     state.homePosts[newPost.id] = newPost;
     saveStateLocally();
-    broadcastSharedSync();
-    syncToCloudKV();
     closeModal();
     renderHome();
 }
@@ -1915,8 +1848,6 @@ async function submitHomePost() {
 function deleteHomePost(id) {
     delete state.homePosts[id];
     saveStateLocally();
-    broadcastSharedSync();
-    syncToCloudKV();
     renderHome();
 }
 
@@ -1937,8 +1868,6 @@ function adminLogin() {
     if(inputCode === "orerasidai" || (me() && inputCode === me().name)) {
         state.admins[localData.currentUser] = true;
         saveStateLocally();
-        broadcastSharedSync();
-        syncToCloudKV();
         adminPanel();
     } else { 
         showToast("パスワードが正しくありません"); 
@@ -2014,8 +1943,13 @@ function deleteSurvey(surveyId) {
     if (state.surveys && state.surveys[surveyId]) {
         delete state.surveys[surveyId];
         saveStateLocally();
-        broadcastSharedSync();
-        syncToCloudKV();
+
+        // Broadcast survey delete packet to all connected peers
+        broadcastToPeers({
+            type: 'SURVEY_DELETE',
+            surveyId: surveyId
+        });
+
         showToast("要望を削除しました");
         adminPanel();
     }
@@ -2035,16 +1969,11 @@ function adminEditCoins(targetUid, targetName, currentCoins) {
         saveStateLocally();
 
         // Broadcast coin update packet to all connected peers
-        Object.values(connections).forEach(conn => {
-            conn.send({
-                type: 'COIN_UPDATE',
-                userId: targetUid,
-                coins: newCoins
-            });
+        broadcastToPeers({
+            type: 'COIN_UPDATE',
+            userId: targetUid,
+            coins: newCoins
         });
-
-        broadcastSharedSync();
-        syncToCloudKV();
 
         showToast(`${targetName} さんのコインを ${newCoins} に更新しました`);
         adminPanel();
@@ -2055,8 +1984,6 @@ function adminEditCoins(targetUid, targetName, currentCoins) {
 function deleteSingleStamp(stampId) {
     delete state.stamps[stampId];
     saveStateLocally();
-    broadcastSharedSync();
-    syncToCloudKV();
     adminPanel();
     render();
 }
