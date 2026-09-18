@@ -1,361 +1,363 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ChatLeaf Online - P2P Chat & Voice Call</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ChatLeaf Online - P2P Chat & Voice Call</title>
 
-<!-- PeerJS for P2P Data Communications and Voice Call -->
-<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
-<!-- QRCode Generator & Html5Qrcode Scanner -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+    <!-- Tailwind CSS for sleek UI styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- PeerJS 1.5.2 for P2P Data Communications and WebRTC Voice Call -->
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <!-- QRCode Generator & Html5Qrcode Scanner -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 
-<style>
-:root {
-    --line-green: #06C755;
-    --line-green-dark: #029d40;
-    --line-bg: #8cabd9;
-    --bubble-mine: #95ec69;
-    --bubble-other: #ffffff;
-    --sidebar-bg: #f7f7f7;
-    --text-primary: #111111;
-    --text-muted: #666666;
-    --status-ready: #06C755;
-    --status-connecting: #e6a23c;
-    --status-active: #1890ff;
-    --call-color: #28a745;
-    --danger-color: #ff4d4f;
-}
-* { box-sizing: border-box; }
-body { 
-    margin: 0; 
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; 
-    background: #eef1f4; 
-    color: var(--text-primary); 
-    overflow: hidden;
-}
-button { cursor: pointer; font-family: inherit; }
+    <style>
+        :root {
+            --line-green: #06C755;
+            --line-green-dark: #029d40;
+            --line-bg: #8cabd9;
+            --bubble-mine: #95ec69;
+            --bubble-other: #ffffff;
+            --sidebar-bg: #f7f9fa;
+            --text-primary: #111111;
+            --status-ready: #06C755;
+            --status-connecting: #e6a23c;
+            --status-active: #1890ff;
+            --danger-color: #ff4d4f;
+        }
+        * { box-sizing: border-box; }
+        body { 
+            margin: 0; 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; 
+            background: #eef1f4; 
+            color: var(--text-primary); 
+            overflow: hidden;
+        }
+        button { cursor: pointer; font-family: inherit; }
 
-.app { 
-    width: 100vw; 
-    height: 100vh; 
-    max-width: 1200px; 
-    margin: 0 auto; 
-    background: white; 
-    display: flex; 
-    overflow: hidden; 
-    box-shadow: 0 0 20px rgba(0,0,0,0.1); 
-}
+        .app-container { 
+            width: 100vw; 
+            height: 100vh; 
+            max-width: 1200px; 
+            margin: 0 auto; 
+            background: white; 
+            display: flex; 
+            overflow: hidden; 
+            box-shadow: 0 0 25px rgba(0,0,0,0.1); 
+        }
 
-.sidebar { 
-    width: 320px; 
-    border-right: 1px solid #e0e0e0; 
-    background: var(--sidebar-bg); 
-    display: flex; 
-    flex-direction: column; 
-    flex-shrink: 0;
-}
-.logo { 
-    font-size: 19px; 
-    font-weight: bold; 
-    padding: 16px; 
-    background: #ffffff; 
-    border-bottom: 1px solid #eee; 
-    color: var(--line-green); 
-    display: flex; 
-    align-items: center; 
-    justify-content: space-between; 
-}
-.status-badge { 
-    font-size: 11px; 
-    padding: 4px 10px; 
-    border-radius: 12px; 
-    background: var(--danger-color); 
-    color: white; 
-    font-weight: bold;
-    display: flex;
-    align-items: center;
-    gap: 4px;
-}
-.status-badge.ready { background: var(--status-ready); }
-.status-badge.connecting { background: var(--status-connecting); }
-.status-badge.active { background: var(--status-active); }
+        .sidebar { 
+            width: 320px; 
+            border-right: 1px solid #e2e8f0; 
+            background: var(--sidebar-bg); 
+            display: flex; 
+            flex-direction: column; 
+            flex-shrink: 0;
+        }
+        
+        .logo-bar { 
+            font-size: 19px; 
+            font-weight: 800; 
+            padding: 16px; 
+            background: #ffffff; 
+            border-bottom: 1px solid #edf2f7; 
+            color: var(--line-green); 
+            display: flex; 
+            align-items: center; 
+            justify-content: space-between; 
+        }
+        
+        .status-badge { 
+            font-size: 11px; 
+            padding: 4px 10px; 
+            border-radius: 12px; 
+            background: var(--danger-color); 
+            color: white; 
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .status-badge.ready { background: var(--status-ready); }
+        .status-badge.connecting { background: var(--status-connecting); }
+        .status-badge.active { background: var(--status-active); }
 
-.my-profile { 
-    display: flex; 
-    align-items: center; 
-    gap: 12px; 
-    padding: 14px 16px; 
-    background: #ffffff; 
-    border-bottom: 1px solid #eee; 
-}
-.avatar { 
-    width: 44px; 
-    height: 44px; 
-    border-radius: 50%; 
-    object-fit: cover; 
-    background: #e0e0e0; 
-    flex-shrink: 0; 
-    border: 1px solid rgba(0,0,0,0.05);
-}
-.my-info { flex: 1; min-width: 0; }
-.my-name { font-weight: bold; font-size: 15px; text-overflow: ellipsis; overflow: hidden; white-space: nowrap; }
-.my-peer-id { font-size: 11px; color: #666; font-family: monospace; background: #f0f0f0; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-top: 2px; }
-.coins { font-size: 12px; color: #d48806; margin-top: 2px; font-weight: bold; }
+        .my-profile-card { 
+            display: flex; 
+            align-items: center; 
+            gap: 12px; 
+            padding: 14px 16px; 
+            background: #ffffff; 
+            border-bottom: 1px solid #edf2f7; 
+        }
+        .avatar { 
+            width: 44px; 
+            height: 44px; 
+            border-radius: 50%; 
+            object-fit: cover; 
+            background: #e2e8f0; 
+            flex-shrink: 0; 
+            border: 1px solid rgba(0,0,0,0.05);
+        }
+        .my-info { flex: 1; min-width: 0; }
+        .my-name { font-weight: 700; font-size: 15px; text-overflow: ellipsis; overflow: hidden; white-space: nowrap; }
+        .my-peer-id { font-size: 11px; color: #4a5568; font-family: monospace; background: #edf2f7; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-top: 2px; }
+        .coins { font-size: 12px; color: #d48806; margin-top: 2px; font-weight: bold; }
 
-.tabs { display: flex; padding: 6px; gap: 4px; background: #eaeaea; }
-.tabs button { 
-    flex: 1; 
-    border: 0; 
-    padding: 8px 2px; 
-    border-radius: 6px; 
-    background: transparent; 
-    font-weight: bold; 
-    font-size: 11px; 
-    color: #666; 
-    transition: all 0.2s;
-}
-.tabs button.active { background: #ffffff; color: var(--line-green); box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .tabs { display: flex; padding: 6px; gap: 4px; background: #edf2f7; }
+        .tabs button { 
+            flex: 1; 
+            border: 0; 
+            padding: 8px 2px; 
+            border-radius: 6px; 
+            background: transparent; 
+            font-weight: 700; 
+            font-size: 12px; 
+            color: #718096; 
+            transition: all 0.2s;
+        }
+        .tabs button.active { background: #ffffff; color: var(--line-green); box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
 
-.add-friend-bar { padding: 10px 12px; background: #fff; border-bottom: 1px solid #eee; display: flex; gap: 6px; }
-.add-friend-bar button { 
-    flex: 1; 
-    border: 1px dashed var(--line-green); 
-    background: #f0f9f2; 
-    color: var(--line-green); 
-    font-weight: bold; 
-    padding: 8px; 
-    border-radius: 8px; 
-    font-size: 12px; 
-    transition: background 0.2s;
-}
-.add-friend-bar button:hover { background: #e1f5e6; }
+        .add-friend-bar { padding: 10px 12px; background: #fff; border-bottom: 1px solid #edf2f7; display: flex; gap: 6px; }
+        .add-friend-bar button { 
+            flex: 1; 
+            border: 1px dashed var(--line-green); 
+            background: #f0f9f2; 
+            color: var(--line-green); 
+            font-weight: bold; 
+            padding: 8px; 
+            border-radius: 8px; 
+            font-size: 12px; 
+            transition: background 0.2s;
+        }
+        .add-friend-bar button:hover { background: #e1f5e6; }
 
-.friend-list { overflow-y: auto; flex: 1; }
-.friend { 
-    display: flex; 
-    align-items: center; 
-    gap: 12px; 
-    padding: 12px 16px; 
-    cursor: pointer; 
-    border-bottom: 1px solid #f0f0f0; 
-    transition: background 0.15s;
-    position: relative;
-}
-.friend:hover, .friend.active { background: #ebf7ee; }
-.friend-online-dot { width: 10px; height: 10px; border-radius: 50%; background: #ccc; position: absolute; right: 16px; }
-.friend-online-dot.online { background: var(--line-green); box-shadow: 0 0 6px var(--line-green); }
+        .friend-list { overflow-y: auto; flex: 1; }
+        .friend { 
+            display: flex; 
+            align-items: center; 
+            gap: 12px; 
+            padding: 12px 16px; 
+            cursor: pointer; 
+            border-bottom: 1px solid #f7fafc; 
+            transition: background 0.15s;
+            position: relative;
+        }
+        .friend:hover, .friend.active { background: #ebf7ee; }
+        .friend-online-dot { width: 10px; height: 10px; border-radius: 50%; background: #cbd5e0; position: absolute; right: 16px; }
+        .friend-online-dot.online { background: var(--line-green); box-shadow: 0 0 6px var(--line-green); }
 
-.main { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--line-bg); position: relative; }
-.header { 
-    height: 60px; 
-    background: #ffffff; 
-    display: flex; 
-    align-items: center; 
-    justify-content: space-between; 
-    padding: 0 16px; 
-    border-bottom: 1px solid #e0e0e0; 
-    z-index: 10;
-}
-.header-title { font-size: 16px; font-weight: bold; display: flex; align-items: center; gap: 10px; }
-.header-buttons { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
-.header button { 
-    border: 0; 
-    background: #f0f2f5; 
-    padding: 6px 12px; 
-    border-radius: 16px; 
-    font-size: 12px; 
-    font-weight: bold; 
-    transition: background 0.2s;
-}
-.header button:hover { background: #e4e6eb; }
-.header button.call-btn {
-    background: #e6f4ea;
-    color: var(--line-green-dark);
-    border: 1px solid var(--line-green);
-}
-.header button.call-btn:hover {
-    background: var(--line-green);
-    color: white;
-}
+        .main-chat { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--line-bg); position: relative; }
+        .header { 
+            height: 60px; 
+            background: #ffffff; 
+            display: flex; 
+            align-items: center; 
+            justify-content: space-between; 
+            padding: 0 16px; 
+            border-bottom: 1px solid #e2e8f0; 
+            z-index: 10;
+        }
+        .header-title { font-size: 16px; font-weight: bold; display: flex; align-items: center; gap: 10px; }
+        .header-buttons { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+        .header button { 
+            border: 0; 
+            background: #f1f5f9; 
+            padding: 6px 12px; 
+            border-radius: 16px; 
+            font-size: 12px; 
+            font-weight: bold; 
+            transition: background 0.2s;
+        }
+        .header button:hover { background: #e2e8f0; }
+        .header button.call-btn {
+            background: #e6f4ea;
+            color: var(--line-green-dark);
+            border: 1px solid var(--line-green);
+        }
+        .header button.call-btn:hover {
+            background: var(--line-green);
+            color: white;
+        }
 
-.messages { 
-    flex: 1; 
-    overflow-y: auto; 
-    padding: 16px; 
-    display: flex; 
-    flex-direction: column; 
-    gap: 12px; 
-}
-.empty { height: 100%; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; text-shadow: 0 1px 3px rgba(0,0,0,0.3); }
-.message-row { display: flex; gap: 8px; align-items: flex-start; user-select: none; }
-.message-row.mine { flex-direction: row-reverse; }
-.message-container { max-width: 70%; display: flex; flex-direction: column; }
-.mine .message-container { align-items: flex-end; }
-.sender-name { font-size: 11px; color: white; text-shadow: 0 1px 2px rgba(0,0,0,0.4); margin-bottom: 3px; font-weight: bold; }
-.message-body-wrap { display: flex; align-items: flex-end; gap: 6px; }
-.mine .message-body-wrap { flex-direction: row-reverse; }
-.message { 
-    padding: 10px 14px; 
-    border-radius: 16px; 
-    background: var(--bubble-other); 
-    word-break: break-word; 
-    font-size: 14px; 
-    line-height: 1.45; 
-    box-shadow: 0 1px 2px rgba(0,0,0,0.12); 
-    cursor: pointer; 
-    transition: transform 0.1s; 
-}
-.message:active { transform: scale(0.98); }
-.mine .message { background: var(--bubble-mine); }
-.message.stamp-only { background: transparent; box-shadow: none; padding: 0; }
-.message.unsent-style { background: rgba(255, 255, 255, 0.8) !important; color: #666; font-size: 12px; box-shadow: none; border: 1px dashed #bbb; cursor: default; }
-.message-img, .stamp-img { max-width: 200px; max-height: 200px; border-radius: 12px; display: block; object-fit: cover; }
-.emoji-img { width: 24px; height: 24px; object-fit: contain; vertical-align: -5px; display: inline-block; margin: 0 2px; }
-.message audio { max-width: 210px; height: 36px; outline: none; }
-.message-info { font-size: 10px; color: white; text-shadow: 0 1px 2px rgba(0,0,0,0.4); white-space: nowrap; }
+        .messages { 
+            flex: 1; 
+            overflow-y: auto; 
+            padding: 16px; 
+            display: flex; 
+            flex-direction: column; 
+            gap: 12px; 
+        }
+        .empty { height: 100%; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; text-shadow: 0 1px 3px rgba(0,0,0,0.3); }
+        .message-row { display: flex; gap: 8px; align-items: flex-start; user-select: none; }
+        .message-row.mine { flex-direction: row-reverse; }
+        .message-container { max-width: 70%; display: flex; flex-direction: column; }
+        .mine .message-container { align-items: flex-end; }
+        .sender-name { font-size: 11px; color: white; text-shadow: 0 1px 2px rgba(0,0,0,0.4); margin-bottom: 3px; font-weight: bold; }
+        .message-body-wrap { display: flex; align-items: flex-end; gap: 6px; }
+        .mine .message-body-wrap { flex-direction: row-reverse; }
+        .message { 
+            padding: 10px 14px; 
+            border-radius: 16px; 
+            background: var(--bubble-other); 
+            word-break: break-word; 
+            font-size: 14px; 
+            line-height: 1.45; 
+            box-shadow: 0 1px 2px rgba(0,0,0,0.12); 
+            cursor: pointer; 
+            transition: transform 0.1s; 
+        }
+        .message:active { transform: scale(0.98); }
+        .mine .message { background: var(--bubble-mine); }
+        .message.stamp-only { background: transparent; box-shadow: none; padding: 0; }
+        .message.unsent-style { background: rgba(255, 255, 255, 0.8) !important; color: #666; font-size: 12px; box-shadow: none; border: 1px dashed #bbb; cursor: default; }
+        .message-img, .stamp-img { max-width: 200px; max-height: 200px; border-radius: 12px; display: block; object-fit: cover; }
+        .emoji-img { width: 24px; height: 24px; object-fit: contain; vertical-align: -5px; display: inline-block; margin: 0 2px; }
+        .message audio { max-width: 210px; height: 36px; outline: none; }
+        .message-info { font-size: 10px; color: white; text-shadow: 0 1px 2px rgba(0,0,0,0.4); white-space: nowrap; }
 
-.reactions-wrap { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
-.reaction-pill { 
-    background: rgba(255, 255, 255, 0.95); 
-    border: 1px solid #ddd; 
-    border-radius: 12px; 
-    padding: 2px 8px; 
-    font-size: 11px; 
-    cursor: pointer; 
-    display: inline-flex; 
-    align-items: center; 
-    gap: 3px; 
-    box-shadow: 0 1px 2px rgba(0,0,0,0.08); 
-}
-.reaction-pill.active { background: #e6f7ff; border-color: #91d5ff; color: #096dd9; font-weight: bold; }
+        .reactions-wrap { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+        .reaction-pill { 
+            background: rgba(255, 255, 255, 0.95); 
+            border: 1px solid #ddd; 
+            border-radius: 12px; 
+            padding: 2px 8px; 
+            font-size: 11px; 
+            cursor: pointer; 
+            display: inline-flex; 
+            align-items: center; 
+            gap: 3px; 
+            box-shadow: 0 1px 2px rgba(0,0,0,0.08); 
+        }
+        .reaction-pill.active { background: #e6f7ff; border-color: #91d5ff; color: #096dd9; font-weight: bold; }
 
-.send-area { background: #ffffff; padding: 10px 14px; display: flex; flex-direction: column; gap: 8px; border-top: 1px solid #eee; }
-.input-row { display: flex; gap: 6px; align-items: center; }
-.send-area input[type="text"] { 
-    flex: 1; 
-    border: 1px solid #ddd; 
-    border-radius: 20px; 
-    padding: 9px 16px; 
-    font-size: 14px; 
-    outline: none; 
-    background: #f9f9f9; 
-}
-.send-area input[type="text"]:focus { background: #ffffff; border-color: var(--line-green); }
-.stamp-btn { 
-    border: 0; 
-    background: #f0f2f5; 
-    border-radius: 50%; 
-    width: 36px; 
-    height: 36px; 
-    font-size: 15px; 
-    display: flex; 
-    align-items: center; 
-    justify-content: center; 
-    flex-shrink: 0; 
-    transition: background 0.2s, transform 0.1s; 
-}
-.stamp-btn:active { transform: scale(0.92); }
-.stamp-btn.recording { background: var(--danger-color); color: white; animation: pulse 1s infinite; }
-.send-button { 
-    background: var(--line-green); 
-    color: white; 
-    border: 0; 
-    border-radius: 20px; 
-    padding: 0 18px; 
-    height: 36px; 
-    font-weight: bold; 
-    flex-shrink: 0; 
-    transition: background 0.2s;
-}
-.send-button:hover { background: var(--line-green-dark); }
+        .send-area { background: #ffffff; padding: 10px 14px; display: flex; flex-direction: column; gap: 8px; border-top: 1px solid #eee; }
+        .input-row { display: flex; gap: 6px; align-items: center; }
+        .send-area input[type="text"] { 
+            flex: 1; 
+            border: 1px solid #ddd; 
+            border-radius: 20px; 
+            padding: 9px 16px; 
+            font-size: 14px; 
+            outline: none; 
+            background: #f9f9f9; 
+        }
+        .send-area input[type="text"]:focus { background: #ffffff; border-color: var(--line-green); }
+        .stamp-btn { 
+            border: 0; 
+            background: #f0f2f5; 
+            border-radius: 50%; 
+            width: 36px; 
+            height: 36px; 
+            font-size: 15px; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            flex-shrink: 0; 
+            transition: background 0.2s, transform 0.1s; 
+        }
+        .stamp-btn:active { transform: scale(0.92); }
+        .stamp-btn.recording { background: var(--danger-color); color: white; animation: pulse 1s infinite; }
+        .send-button { 
+            background: var(--line-green); 
+            color: white; 
+            border: 0; 
+            border-radius: 20px; 
+            padding: 0 18px; 
+            height: 36px; 
+            font-weight: bold; 
+            flex-shrink: 0; 
+            transition: background 0.2s;
+        }
+        .send-button:hover { background: var(--line-green-dark); }
 
-.stamp-picker { display: none; gap: 8px; overflow-x: auto; padding: 8px 0; border-bottom: 1px solid #eee; }
-.stamp-picker.active { display: flex; }
-.stamp-picker-item { 
-    position: relative; 
-    display: inline-flex; 
-    align-items: center; 
-    justify-content: center; 
-    min-width: 44px; 
-    height: 44px; 
-    cursor: pointer; 
-    background: #f8f9fa; 
-    border-radius: 8px; 
-    border: 1px solid #eee; 
-}
-.stamp-picker-item img { width: 36px; height: 36px; object-fit: cover; border-radius: 6px; }
-.stamp-picker-item .badge { position: absolute; bottom: 0; right: 0; background: rgba(0,0,0,0.6); color: white; font-size: 8px; padding: 1px 3px; border-radius: 3px; line-height: 1; }
+        .stamp-picker { display: none; gap: 8px; overflow-x: auto; padding: 8px 0; border-bottom: 1px solid #eee; }
+        .stamp-picker.active { display: flex; }
+        .stamp-picker-item { 
+            position: relative; 
+            display: inline-flex; 
+            align-items: center; 
+            justify-content: center; 
+            min-width: 44px; 
+            height: 44px; 
+            cursor: pointer; 
+            background: #f8f9fa; 
+            border-radius: 8px; 
+            border: 1px solid #eee; 
+        }
+        .stamp-picker-item img { width: 36px; height: 36px; object-fit: cover; border-radius: 6px; }
+        .stamp-picker-item .badge { position: absolute; bottom: 0; right: 0; background: rgba(0,0,0,0.6); color: white; font-size: 8px; padding: 1px 3px; border-radius: 3px; line-height: 1; }
 
-.shop-tab-btn { padding: 10px 16px; background: transparent; border: none; font-weight: bold; font-size: 14px; color: #666; cursor: pointer; border-bottom: 3px solid transparent; }
-.shop-tab-btn.active { color: var(--line-green); border-bottom-color: var(--line-green); }
+        .shop-tab-btn { padding: 10px 16px; background: transparent; border: none; font-weight: bold; font-size: 14px; color: #666; cursor: pointer; border-bottom: 3px solid transparent; }
+        .shop-tab-btn.active { color: var(--line-green); border-bottom-color: var(--line-green); }
 
-.home-view { flex: 1; overflow-y: auto; background: #f4f6f8; padding: 20px; display: flex; flex-direction: column; gap: 16px; }
-.home-banner { background: linear-gradient(135deg, var(--line-green), var(--line-green-dark)); color: white; padding: 20px; border-radius: 14px; box-shadow: 0 4px 10px rgba(6,199,85,0.2); }
-.home-post { background: white; border-radius: 14px; padding: 18px; box-shadow: 0 2px 6px rgba(0,0,0,0.05); }
-.home-post-img { width: 100%; max-height: 300px; object-fit: cover; border-radius: 10px; margin-top: 10px; }
+        .home-view { flex: 1; overflow-y: auto; background: #f4f6f8; padding: 20px; display: flex; flex-direction: column; gap: 16px; }
+        .home-banner { background: linear-gradient(135deg, var(--line-green), var(--line-green-dark)); color: white; padding: 20px; border-radius: 14px; box-shadow: 0 4px 10px rgba(6,199,85,0.2); }
+        .home-post { background: white; border-radius: 14px; padding: 18px; box-shadow: 0 2px 6px rgba(0,0,0,0.05); }
+        .home-post-img { width: 100%; max-height: 300px; object-fit: cover; border-radius: 10px; margin-top: 10px; }
 
-.overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: none; align-items: center; justify-content: center; padding: 16px; z-index: 1000; backdrop-filter: blur(2px); }
-.modal { background: white; width: min(500px, 100%); max-height: 85vh; overflow-y: auto; border-radius: 16px; padding: 22px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); }
-.modal.large { width: min(850px, 95vw); }
-.modal h2 { margin-top: 0; font-size: 18px; color: #222; }
-.modal label { font-size: 12px; font-weight: bold; color: #555; display: block; margin-top: 12px; }
-.modal input, .modal textarea, .modal select { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 8px; margin: 4px 0 10px; font-family: inherit; font-size: 14px; outline: none; }
-.modal input:focus, .modal textarea:focus, .modal select:focus { border-color: var(--line-green); }
-.modal button { border: 0; border-radius: 8px; padding: 10px 16px; background: #f0f2f5; font-weight: bold; margin-top: 6px; font-size: 13px; transition: background 0.2s; }
-.modal button:hover { background: #e4e6eb; }
-.green { background: var(--line-green) !important; color: white; }
-.green:hover { background: var(--line-green-dark) !important; }
-.red { background: var(--danger-color) !important; color: white; }
-.red:hover { background: #d9363e !important; }
+        .overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: none; align-items: center; justify-content: center; padding: 16px; z-index: 1000; backdrop-filter: blur(2px); }
+        .modal { background: white; width: min(500px, 100%); max-height: 85vh; overflow-y: auto; border-radius: 16px; padding: 22px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); }
+        .modal.large { width: min(850px, 95vw); }
+        .modal h2 { margin-top: 0; font-size: 18px; color: #222; font-weight: bold; }
+        .modal label { font-size: 12px; font-weight: bold; color: #555; display: block; margin-top: 12px; }
+        .modal input, .modal textarea, .modal select { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 8px; margin: 4px 0 10px; font-family: inherit; font-size: 14px; outline: none; }
+        .modal input:focus, .modal textarea:focus, .modal select:focus { border-color: var(--line-green); }
+        .modal button { border: 0; border-radius: 8px; padding: 10px 16px; background: #f0f2f5; font-weight: bold; margin-top: 6px; font-size: 13px; transition: background 0.2s; }
+        .modal button:hover { background: #e4e6eb; }
+        .green { background: var(--line-green) !important; color: white; }
+        .green:hover { background: var(--line-green-dark) !important; }
+        .red { background: var(--danger-color) !important; color: white; }
+        .red:hover { background: #d9363e !important; }
 
-/* Call UI Styling */
-.call-modal-content { text-align: center; padding: 10px 0; }
-.call-avatar { width: 90px; height: 90px; border-radius: 50%; margin: 15px auto; object-fit: cover; border: 3px solid var(--line-green); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
-.call-timer { font-size: 20px; font-weight: bold; color: var(--line-green-dark); margin: 10px 0; font-family: monospace; }
-.call-actions { display: flex; gap: 12px; justify-content: center; margin-top: 20px; }
-.call-btn-action { padding: 12px 24px; border-radius: 30px; font-size: 15px; font-weight: bold; display: flex; align-items: center; gap: 6px; }
+        /* Call UI Styling */
+        .call-modal-content { text-align: center; padding: 10px 0; }
+        .call-avatar { width: 90px; height: 90px; border-radius: 50%; margin: 15px auto; object-fit: cover; border: 3px solid var(--line-green); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+        .call-timer { font-size: 22px; font-weight: bold; color: var(--line-green-dark); margin: 10px 0; font-family: monospace; }
+        .call-actions { display: flex; gap: 12px; justify-content: center; margin-top: 20px; }
+        .call-btn-action { padding: 12px 24px; border-radius: 30px; font-size: 14px; font-weight: bold; display: flex; align-items: center; gap: 6px; }
 
-/* Alert Box Toast */
-.toast-msg {
-    position: fixed;
-    top: 20px;
-    left: 50%;
-    transform: translateX(-50%);
-    background: rgba(0, 0, 0, 0.85);
-    color: white;
-    padding: 10px 20px;
-    border-radius: 20px;
-    font-size: 13px;
-    z-index: 2000;
-    pointer-events: none;
-    opacity: 0;
-    transition: opacity 0.3s ease;
-}
-.toast-msg.show { opacity: 1; }
+        /* Toast notification */
+        .toast-msg {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.85);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-size: 13px;
+            z-index: 2000;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+        .toast-msg.show { opacity: 1; }
 
-.user-card { display: flex; align-items: center; justify-content: space-between; background: #f9f9f9; padding: 10px 12px; border-radius: 8px; margin-bottom: 8px; border: 1px solid #eee; }
-.survey-card { background: #fff; border: 1px solid #e0e0e0; padding: 12px; border-radius: 8px; margin-bottom: 10px; }
+        .user-card { display: flex; align-items: center; justify-content: space-between; background: #f9f9f9; padding: 10px 12px; border-radius: 8px; margin-bottom: 8px; border: 1px solid #eee; }
+        .survey-card { background: #fff; border: 1px solid #e0e0e0; padding: 12px; border-radius: 8px; margin-bottom: 10px; }
 
-@keyframes pulse { 0% { transform: scale(0.95); opacity: 0.8; } 50% { transform: scale(1.1); opacity: 0.3; } 100% { transform: scale(0.95); opacity: 0.8; } }
+        @keyframes pulse { 0% { transform: scale(0.95); opacity: 0.8; } 50% { transform: scale(1.1); opacity: 0.3; } 100% { transform: scale(0.95); opacity: 0.8; } }
 
-@media (max-width: 768px) {
-    .app { flex-direction: column; }
-    .sidebar { width: 100%; height: 42vh; }
-    .main { height: 58vh; }
-}
-</style>
+        @media (max-width: 768px) {
+            .app-container { flex-direction: column; }
+            .sidebar { width: 100%; height: 42vh; }
+            .main-chat { height: 58vh; }
+        }
+    </style>
 </head>
 <body>
 
-<div class="app">
+<div class="app-container">
     <aside class="sidebar">
-        <div class="logo">
+        <div class="logo-bar">
             <span>🟢 ChatLeaf</span>
             <span id="netStatus" class="status-badge connecting">🟡 接続中...</span>
         </div>
-        <div class="my-profile">
+        <div class="my-profile-card">
             <img id="myIcon" class="avatar" src="">
             <div class="my-info">
                 <div id="myName" class="my-name">読み込み中...</div>
@@ -369,13 +371,13 @@ button { cursor: pointer; font-family: inherit; }
             <button id="homeTab" onclick="openHome()">ホーム</button>
         </div>
         <div class="add-friend-bar">
-            <button onclick="openConnectModal()">➕ 接続ID入力で友達追加</button>
+            <button onclick="openConnectModal()">➕ ID入力で追加</button>
             <button onclick="openMyQRModal()" style="background:#eef7ff; border-color:#1890ff; color:#1890ff;">📱 QRコード</button>
         </div>
         <div id="friendList" class="friend-list"></div>
     </aside>
 
-    <main class="main">
+    <main class="main-chat">
         <div class="header">
             <div id="chatTitle" class="header-title">ChatLeaf</div>
             <div class="header-buttons">
@@ -396,7 +398,7 @@ button { cursor: pointer; font-family: inherit; }
                 <button class="stamp-btn" onclick="document.getElementById('chatImg').click()" title="画像送信">📷</button>
                 <input type="file" id="chatImg" accept="image/*" style="display:none;" onchange="sendImageMessage(this)">
                 <button class="stamp-btn" onclick="toggleStampPicker()" title="スタンプ / 絵文字">😊</button>
-                <button id="recBtn" class="stamp-btn" onclick="toggleAudioRecording()" title="音声メッセージ録音">🔴</button>
+                <button id="recBtn" class="stamp-btn" onclick="toggleAudioRecording()" title="音声メッセージ">🔴</button>
                 <button id="sttBtn" class="stamp-btn" onclick="toggleSpeechRecognition()" title="音声文字起こし">🗣️</button>
                 <input type="text" id="messageInput" placeholder="メッセージを入力..." onkeydown="if(event.key==='Enter') sendMessage()">
                 <button class="send-button" onclick="sendMessage()">送信</button>
@@ -405,14 +407,14 @@ button { cursor: pointer; font-family: inherit; }
     </main>
 </div>
 
-<!-- Audio Element for P2P Voice Call Output -->
+<!-- Audio element for P2P Voice Call audio output -->
 <audio id="remoteAudio" autoplay style="display:none;"></audio>
 
 <div id="toast" class="toast-msg"></div>
 <div id="overlay" class="overlay"><div id="modal" class="modal"></div></div>
 
 <script>
-const STORAGE_KEY = "chatleaf_p2p_v2";
+const STORAGE_KEY = "chatleaf_p2p_v3";
 const DEFAULT_AVATAR = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100'><circle cx='50' cy='50' r='50' fill='%2306C755'/><circle cx='50' cy='40' r='20' fill='%23fff'/><circle cx='50' cy='90' r='35' fill='%23fff'/></svg>";
 const AI_BOT_ICON = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100'><circle cx='50' cy='50' r='50' fill='%231890ff'/><circle cx='50' cy='38' r='18' fill='%23fff'/><rect x='25' y='60' width='50' height='25' rx='10' fill='%23fff'/><circle cx='43' cy='38' r='4' fill='%231890ff'/><circle cx='57' cy='38' r='4' fill='%231890ff'/></svg>";
 const AI_BOT_ID = "bot_yuushuu_ai";
@@ -422,7 +424,7 @@ let state = localData.cachedState || { users: {}, chats: {}, stamps: {}, homePos
 
 let peer = null;
 let myPeerId = "";
-let connections = {}; // Active PeerJS DataConnections indexed by peerId
+let connections = {}; // PeerJS DataConnections
 
 let currentChat = null;
 let viewMode = "chat";
@@ -434,6 +436,7 @@ let callTimerInterval = null;
 let callSeconds = 0;
 let isMuted = false;
 
+// Media Recorder / STT
 let mediaRecorder = null;
 let audioChunks = [];
 let isRecordingAudio = false;
@@ -456,6 +459,8 @@ function showToast(text) {
 }
 
 function createId() { return Date.now().toString() + Math.random().toString(36).slice(2, 7); }
+
+// Generates an ultra-short 6-character short Peer ID (e.g. leaf-a1b2c3)
 function generateShortPeerId() { return 'leaf-' + Math.random().toString(36).slice(2, 8); }
 
 function me() { return state.users[localData.currentUser]; }
@@ -531,7 +536,7 @@ function initPeerJS() {
             setupConnection(conn);
         });
 
-        // Handle incoming P2P voice call
+        // Handle incoming WebRTC 1-on-1 voice call
         peer.on('call', (call) => {
             handleIncomingCall(call);
         });
@@ -558,7 +563,7 @@ function updatePeerStatusUI() {
     const activeCount = Object.keys(connections).length;
 
     if (activeCount > 0) {
-        statusBadge.textContent = `🔵 友達通信中 (${activeCount})`;
+        statusBadge.textContent = `🔵 通信中 (${activeCount})`;
         statusBadge.className = "status-badge active";
     } else {
         statusBadge.textContent = "🟢 接続準備OK";
@@ -591,7 +596,7 @@ function setupConnection(conn) {
         connections[conn.peer] = conn;
         updatePeerStatusUI();
 
-        // Exchange profile info on open connection
+        // Send profile info and request shop/home sync
         conn.send({
             type: 'PROFILE_EXCHANGE',
             user: {
@@ -600,7 +605,9 @@ function setupConnection(conn) {
                 name: me().name,
                 icon: me().icon,
                 coins: me().coins || 0
-            }
+            },
+            stamps: state.stamps,
+            homePosts: state.homePosts
         });
     });
 
@@ -643,6 +650,11 @@ function handleIncomingPeerData(data, conn) {
 
             if (!me().friends) me().friends = {};
             me().friends[remoteUser.id] = true;
+
+            // Merge shared stamps and home posts
+            if (data.stamps) Object.assign(state.stamps, data.stamps);
+            if (data.homePosts) Object.assign(state.homePosts, data.homePosts);
+
             saveStateLocally();
             render();
             showToast(`✨ ${remoteUser.name} さんと接続しました！`);
@@ -687,15 +699,20 @@ function handleIncomingPeerData(data, conn) {
             state.users[userId].coins = coins;
             if (userId === localData.currentUser) {
                 document.getElementById("coinCount").textContent = coins;
-                showToast(`🪙 管理者によってコインが ${coins} に変更されました`);
+                showToast(`🪙 コインが ${coins} に変更されました`);
             }
             saveStateLocally();
             render();
         }
     }
+    else if (data.type === 'SHARED_SYNC') {
+        if (data.stamps) state.stamps = data.stamps;
+        if (data.homePosts) state.homePosts = data.homePosts;
+        saveStateLocally();
+        render();
+    }
 }
 
-/* Voice Call Implementation */
 async function startVoiceCall() {
     if (!currentChat || currentChat.startsWith("keep_") || state.users[currentChat]?.isBot) {
         return showToast("通話対象の友達を選択してください");
@@ -733,7 +750,7 @@ async function startVoiceCall() {
 
 function handleIncomingCall(call) {
     if (activeCall) {
-        call.close(); // Busy
+        call.close();
         return;
     }
 
@@ -923,7 +940,7 @@ function openAuthModal() {
     const userList = Object.values(state.users).filter(u => !u.isBot);
     
     let userOptionsHtml = userList.length > 0 ? `
-        <h3 style="font-size:14px; margin-bottom:8px;">既存アカウントでログイン</h3>
+        <h3 style="font-size:14px; margin-bottom:8px; font-weight:bold;">既存アカウントでログイン</h3>
         <div style="display:flex; flex-direction:column; gap:6px; margin-bottom:15px; max-height:160px; overflow-y:auto;">
             ${userList.map(u => `
                 <button style="display:flex; align-items:center; gap:10px; text-align:left; background:#f0f7f2; border:1px solid #cce8d5; padding:8px 12px; border-radius:8px;" onclick="selectAccount('${u.id}')">
@@ -941,7 +958,7 @@ function openAuthModal() {
     modal(`
         <h2>ChatLeaf へようこそ</h2>
         ${userOptionsHtml}
-        <h3 style="font-size:14px; margin-bottom:8px;">新規アカウント作成</h3>
+        <h3 style="font-size:14px; margin-bottom:8px; font-weight:bold;">新規アカウント作成</h3>
         <label>お名前</label><input id="regName" placeholder="名前を入力">
         <label>アイコン (任意)</label><input id="regIcon" type="file" accept="image/*">
         <button class="green" style="width:100%; margin-top:10px;" onclick="register()">新規作成してスタート</button>
@@ -995,7 +1012,7 @@ function openProfile() {
         <button class="green" style="width:100%; margin-top:6px;" onclick="saveProfile()">名前を保存</button>
         <hr style="margin:15px 0; border:0; border-top:1px solid #eee;">
         
-        <h3 style="margin-top:0; font-size:14px;">📱 P2P 友だち追加機能</h3>
+        <h3 style="margin-top:0; font-size:14px; font-weight:bold;">📱 P2P 友だち追加機能</h3>
         <div style="display:flex; gap:10px; margin-bottom:10px;">
             <button class="green" style="flex:1; padding:10px;" onclick="openMyQRModal()">マイQRコード表示</button>
             <button style="flex:1; padding:10px; background:#1890ff; color:white;" onclick="openQRScannerModal()">カメラでスキャン</button>
@@ -1014,7 +1031,7 @@ function openMyQRModal() {
     modal(`
         <div style="text-align:center;">
             <h2>マイQRコード</h2>
-            <p style="font-size:12px; color:#666; margin-bottom:10px;">接続IDのみを保持した極小データQRコードです。カメラで即座にスキャンできます。</p>
+            <p style="font-size:12px; color:#666; margin-bottom:10px;">極小6文字データ（${escapeHTML(shortPeerId)}）の低密度QRコードです。スマホで爆速スキャン可能です。</p>
             <div id="qrcode" style="display:flex; justify-content:center; margin:15px 0;"></div>
             <div style="font-weight:bold; font-size:15px; margin-bottom:4px;">${escapeHTML(me().name)}</div>
             <div style="font-size:12px; color:#888; font-family:monospace; margin-bottom:15px;">接続ID: ${escapeHTML(shortPeerId)}</div>
@@ -1028,8 +1045,8 @@ function openMyQRModal() {
             qrContainer.innerHTML = "";
             new QRCode(qrContainer, {
                 text: shortPeerId,
-                width: 200,
-                height: 200,
+                width: 220,
+                height: 220,
                 correctLevel: QRCode.CorrectLevel.L
             });
         }
@@ -1039,7 +1056,7 @@ function openMyQRModal() {
 function openConnectModal() {
     modal(`
         <h2>➕ 接続IDを手入力して追加</h2>
-        <p style="font-size:12px; color:#666; margin-bottom:12px;">友達のマイページに表示されている接続ID（例: leaf-a1b2c3）を入力してください。</p>
+        <p style="font-size:12px; color:#666; margin-bottom:12px;">友達の接続ID（例: leaf-a1b2c3）を入力してください。</p>
         <label>友達の接続ID</label>
         <input id="inputPeerId" placeholder="例: leaf-a1b2c3" onkeydown="if(event.key==='Enter') submitManualConnect()">
         <button class="green" style="width:100%; padding:10px; margin-top:10px;" onclick="submitManualConnect()">接続して友だち追加</button>
@@ -1315,7 +1332,7 @@ function openMessageMenu(msgId) {
 
     modal(`
         <div style="text-align:center;">
-            <h3 style="margin-top:0;">リアクション & メニュー</h3>
+            <h3 style="margin-top:0; font-weight:bold;">リアクション & メニュー</h3>
             <div style="display:flex; justify-content:center; flex-wrap:wrap; gap:8px; margin: 15px 0;">
                 ${defaultBtnsHtml}
                 ${ownedBtnsHtml}
@@ -1398,7 +1415,7 @@ function pushMessage(content, type="text") {
         if(!state.chats[key]) state.chats[key] = {};
         state.chats[key][msg.id] = msg;
 
-        // P2P Data Send
+        // P2P Message Dispatch
         if (state.users[currentChat] && state.users[currentChat].peerId) {
             const targetPeerId = state.users[currentChat].peerId;
             if (connections[targetPeerId]) {
@@ -1409,7 +1426,7 @@ function pushMessage(content, type="text") {
             }
         }
 
-        // AI Bot logic
+        // AI Bot Dispatch
         if(currentChat === AI_BOT_ID) {
             handleAiBotResponse(content, type);
         }
@@ -1473,7 +1490,7 @@ async function toggleAudioRecording() {
         isRecordingAudio = false;
         recBtn.classList.remove("recording");
         recBtn.textContent = "🔴";
-        recBtn.title = "音声メッセージ録音";
+        recBtn.title = "音声メッセージ";
     }
 }
 
@@ -1580,6 +1597,16 @@ function renderStampPicker() {
 
 function toggleStampPicker() { document.getElementById("stampPicker").classList.toggle("active"); }
 
+function broadcastSharedSync() {
+    Object.values(connections).forEach(conn => {
+        conn.send({
+            type: 'SHARED_SYNC',
+            stamps: state.stamps,
+            homePosts: state.homePosts
+        });
+    });
+}
+
 function openStamps(tab = 'buy') {
     const stamps = Object.values(state.stamps);
 
@@ -1592,7 +1619,7 @@ function openStamps(tab = 'buy') {
 
     if(tab === 'buy') {
         const buyContent = `
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+            <div style="display:flex; justify-space-between; align-items:center; margin-bottom:12px;">
                 <span style="font-size:13px; color:#555;">所持コイン: <b style="color:#d48806;">🪙 ${me().coins}</b></span>
             </div>
             <div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(130px,1fr)); gap:12px; max-height:380px; overflow-y:auto; padding-right:4px;">
@@ -1670,6 +1697,7 @@ async function sellStamp() {
 
     showToast("アイテムを出品しました！");
     saveStateLocally();
+    broadcastSharedSync();
     openStamps('buy');
     render();
 }
@@ -1692,6 +1720,7 @@ function buyStamp(id) {
 
     showToast("アイテムを購入しました！");
     saveStateLocally();
+    broadcastSharedSync();
     openStamps('buy');
     render();
 }
@@ -1740,7 +1769,7 @@ function renderHome() {
     const isAdmin = state.admins[localData.currentUser];
     const posts = Object.values(state.homePosts).reverse();
 
-    let html = `<div class="home-banner"><h1 style="margin:0 0 6px; font-size:20px;">🌿 ChatLeaf Official</h1><p style="margin:0; font-size:13px; opacity:0.9;">P2Pリアルタイムトーク ＆ 通話アプリ</p></div>`;
+    let html = `<div class="home-banner"><h1 style="margin:0 0 6px; font-size:20px; font-weight:bold;">🌿 ChatLeaf Official</h1><p style="margin:0; font-size:13px; opacity:0.9;">P2Pリアルタイムトーク ＆ WebRTC通話アプリ</p></div>`;
     posts.forEach(p => {
         html += `
             <div class="home-post">
@@ -1781,6 +1810,7 @@ async function submitHomePost() {
 
     state.homePosts[newPost.id] = newPost;
     saveStateLocally();
+    broadcastSharedSync();
     closeModal();
     renderHome();
 }
@@ -1788,6 +1818,7 @@ async function submitHomePost() {
 function deleteHomePost(id) {
     delete state.homePosts[id];
     saveStateLocally();
+    broadcastSharedSync();
     renderHome();
 }
 
@@ -1795,6 +1826,7 @@ function openAdmin() {
     if(state.admins[localData.currentUser]) return adminPanel();
     modal(`
         <h2>👑 管理者認証</h2>
+        <p style="font-size:12px; color:#666; margin-bottom:10px;">管理者コードまたは現在のユーザー名（<code>orerasidai</code>）を入力してください。</p>
         <label>管理者コード</label>
         <input id="adminCode" type="password" placeholder="管理者コード">
         <button class="green" style="width:100%; margin-top:10px;" onclick="adminLogin()">認証</button>
@@ -1804,7 +1836,7 @@ function openAdmin() {
 
 function adminLogin() {
     const inputCode = document.getElementById("adminCode").value.trim();
-    if(inputCode === "orerasidai") {
+    if(inputCode === "orerasidai" || inputCode === me()?.name) {
         state.admins[localData.currentUser] = true;
         saveStateLocally();
         adminPanel();
@@ -1822,7 +1854,7 @@ function adminPanel() {
         <h2>👑 管理者コントロールパネル</h2>
 
         <div style="background:#f0f7ff; padding:12px; border-radius:10px; margin-bottom:15px; border:1px solid #bae7ff;">
-            <h3 style="margin:0 0 8px 0; font-size:13px; color:#0050b3;">🪙 ユーザーコイン管理 (${allUsers.length}名)</h3>
+            <h3 style="margin:0 0 8px 0; font-size:13px; color:#0050b3; font-weight:bold;">🪙 ユーザーコイン管理 (${allUsers.length}名)</h3>
             <div style="max-height:160px; overflow-y:auto; display:flex; flex-direction:column; gap:6px;">
                 ${allUsers.map(u => `
                     <div class="user-card">
@@ -1841,7 +1873,7 @@ function adminPanel() {
         
         <div style="background:#fff0f0; padding:12px; border-radius:10px; margin-bottom:15px; border:1px solid #ffccc7;">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                <h3 style="margin:0; font-size:13px; color:#cf1322;">🛍️ ショップアイテム管理 (${allStamps.length}件)</h3>
+                <h3 style="margin:0; font-size:13px; color:#cf1322; font-weight:bold;">🛍️ ショップアイテム管理 (${allStamps.length}件)</h3>
             </div>
             <div style="max-height:120px; overflow-y:auto;">
                 ${allStamps.map(s => `
@@ -1854,7 +1886,7 @@ function adminPanel() {
         </div>
 
         <div style="background:#fff8e7; padding:12px; border-radius:10px; margin-bottom:15px; border:1px solid #ffe58f;">
-            <h3 style="margin:0 0 8px 0; font-size:13px; color:#d48806;">📋 届いた要望 (${surveysList.length}件)</h3>
+            <h3 style="margin:0 0 8px 0; font-size:13px; color:#d48806; font-weight:bold;">📋 届いた要望 (${surveysList.length}件)</h3>
             <div style="max-height:120px; overflow-y:auto;">
                 ${surveysList.map(s => `
                     <div class="survey-card">
@@ -1866,7 +1898,7 @@ function adminPanel() {
         </div>
 
         <div style="background:#eef7ee; padding:12px; border-radius:10px; margin-bottom:15px; border:1px solid #cce8d5;">
-            <h3 style="margin:0 0 8px 0; font-size:13px; color:#029d40;">📝 公式掲示板投稿</h3>
+            <h3 style="margin:0 0 8px 0; font-size:13px; color:#029d40; font-weight:bold;">📝 公式掲示板投稿</h3>
             <button class="green" style="padding:6px 12px; font-size:12px;" onclick="openNewPostModal()">＋ お知らせを投稿する</button>
         </div>
 
@@ -1887,7 +1919,7 @@ function adminEditCoins(targetUid, targetName, currentCoins) {
         state.users[targetUid].coins = newCoins;
         saveStateLocally();
 
-        // Broadcast or send P2P sync packet to active connections
+        // Broadcast coin update packet to all connected peers
         Object.values(connections).forEach(conn => {
             conn.send({
                 type: 'COIN_UPDATE',
@@ -1905,6 +1937,7 @@ function adminEditCoins(targetUid, targetName, currentCoins) {
 function deleteSingleStamp(stampId) {
     delete state.stamps[stampId];
     saveStateLocally();
+    broadcastSharedSync();
     adminPanel();
     render();
 }
