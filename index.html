@@ -6,6 +6,9 @@
 <title>ChatLeaf Online</title>
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+<!-- QRコード生成・読み取りライブラリ -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <style>
 :root {
     --line-green: #06C755;
@@ -165,7 +168,6 @@ button { cursor: pointer; font-family: inherit; }
 <div id="overlay" class="overlay"><div id="modal" class="modal"></div></div>
 
 <script>
-// ⚠️ 以下の firebaseConfig 内の文字列をご自身の Firebase プロジェクトの値に変更してください
 const firebaseConfig = {
     apiKey: "YOUR_ACTUAL_API_KEY",
     authDomain: "YOUR_PROJECT.firebaseapp.com",
@@ -179,7 +181,6 @@ const firebaseConfig = {
 let db = null;
 let isOnline = false;
 
-// YOUR_ACTUAL_API_KEY でない場合にオンライン接続を開始します
 if (firebaseConfig.apiKey !== "YOUR_ACTUAL_API_KEY" && firebaseConfig.apiKey !== "YOUR_API_KEY") {
     firebase.initializeApp(firebaseConfig);
     db = firebase.database();
@@ -207,6 +208,7 @@ let isRecognizingSpeech = false;
 
 let pressTimer = null;
 let isLongPressAction = false;
+let html5QrCodeScanner = null;
 
 function saveStateLocally() {
     localData.cachedState = state;
@@ -460,7 +462,7 @@ function renderFriends() {
     `).join("");
 
     if (friends.length === 0) {
-        list.innerHTML = `<div style="padding:20px; text-align:center; color:#888; font-size:12px;">「合言葉で友だち追加」からお友達を追加してください</div>`;
+        list.innerHTML = `<div style="padding:20px; text-align:center; color:#888; font-size:12px;">「合言葉」またはマイページの「QRコード」から友だちを追加してください</div>`;
     }
 }
 
@@ -1465,9 +1467,106 @@ function openProfile() {
         <label>名前</label><input id="pName" value="${escapeHTML(me().name)}">
         <button class="green" onclick="saveProfile()">保存</button>
         <hr style="margin:15px 0;">
+        
+        <h3 style="margin-top:0;">📷 QRコードで友だち追加</h3>
+        <div style="display:flex; gap:10px; margin-bottom:10px;">
+            <button class="green" style="flex:1; padding:10px;" onclick="openMyQRModal()">マイQRコード</button>
+            <button style="flex:1; padding:10px; background:#1890ff; color:white;" onclick="openQRScannerModal()">カメラでスキャン</button>
+        </div>
+
+        <hr style="margin:15px 0;">
         <button class="red" style="width:100%;" onclick="logout()">ログアウト / アカウント切り替え</button>
         <button onclick="closeModal()">閉じる</button>
     `);
+}
+
+function openMyQRModal() {
+    modal(`
+        <div style="text-align:center;">
+            <h2>マイQRコード</h2>
+            <p style="font-size:12px; color:#666; margin-bottom:15px;">友達にこのQRコードをカメラで読み取ってもらってください。</p>
+            <div id="qrcode" style="display:flex; justify-content:center; margin:20px 0;"></div>
+            <button style="width:100%; margin-top:10px;" onclick="openProfile()">マイページに戻る</button>
+        </div>
+    `);
+
+    setTimeout(() => {
+        const qrContainer = document.getElementById("qrcode");
+        if(qrContainer) {
+            qrContainer.innerHTML = "";
+            new QRCode(qrContainer, {
+                text: "CHATLEAF_USER:" + localData.currentUser,
+                width: 180,
+                height: 180
+            });
+        }
+    }, 100);
+}
+
+function openQRScannerModal() {
+    modal(`
+        <div style="text-align:center;">
+            <h2>QRコードをスキャン</h2>
+            <p style="font-size:12px; color:#666; margin-bottom:10px;">相手のマイQRコードをカメラ枠に合わせてください。</p>
+            <div id="qr-reader" style="width:100%; max-width:300px; margin:0 auto; border-radius:8px; overflow:hidden;"></div>
+            <button style="width:100%; margin-top:15px;" onclick="stopQRScanner(); openProfile();">マイページに戻る</button>
+        </div>
+    `);
+
+    setTimeout(() => {
+        html5QrCodeScanner = new Html5Qrcode("qr-reader");
+        html5QrCodeScanner.start(
+            { facingMode: "environment" },
+            { fps: 10, qrbox: { width: 200, height: 200 } },
+            (decodedText) => {
+                if(decodedText.startsWith("CHATLEAF_USER:")) {
+                    const targetUid = decodedText.replace("CHATLEAF_USER:", "");
+                    stopQRScanner();
+                    addFriendById(targetUid);
+                }
+            },
+            (errorMessage) => {}
+        ).catch(err => {
+            alert("カメラの起動に失敗しました。カメラ使用の許可を許可してください。");
+        });
+    }, 100);
+}
+
+function stopQRScanner() {
+    if (html5QrCodeScanner) {
+        html5QrCodeScanner.stop().then(() => {
+            html5QrCodeScanner.clear();
+            html5QrCodeScanner = null;
+        }).catch(err => console.error(err));
+    }
+}
+
+function addFriendById(targetUid) {
+    const myUid = localData.currentUser;
+    if (targetUid === myUid) return alert("自分自身を友だち追加することはできません。");
+    if (!state.users[targetUid]) return alert("対象のユーザーが見つかりませんでした。");
+
+    if (!me().friends) me().friends = {};
+    if (!state.users[targetUid].friends) state.users[targetUid].friends = {};
+
+    if (me().friends[targetUid]) {
+        alert(`${state.users[targetUid].name} さんは既に友だちに追加されています。`);
+        openProfile();
+        return;
+    }
+
+    me().friends[targetUid] = true;
+    state.users[targetUid].friends[myUid] = true;
+
+    if (isOnline) {
+        db.ref(`users/${myUid}/friends/${targetUid}`).set(true);
+        db.ref(`users/${targetUid}/friends/${myUid}`).set(true);
+    }
+
+    saveStateLocally();
+    alert(`${state.users[targetUid].name} さんを友だちに追加しました！`);
+    openProfile();
+    render();
 }
 
 function saveProfile() {
@@ -1484,7 +1583,10 @@ function modal(html, isLarge=false) {
     m.innerHTML = html;
     document.getElementById("overlay").style.display = "flex";
 }
-function closeModal() { document.getElementById("overlay").style.display = "none"; }
+function closeModal() {
+    stopQRScanner();
+    document.getElementById("overlay").style.display = "none";
+}
 
 init();
 </script>
