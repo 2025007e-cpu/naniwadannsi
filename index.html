@@ -3,10 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ChatLeaf Online - P2P Chat</title>
+<title>ChatLeaf Online - P2P Chat & Voice Call</title>
 
-<!-- PeerJS for P2P Data Communications -->
-<script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+<!-- PeerJS for P2P Data Communications and Voice Call -->
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <!-- QRCode Generator & Html5Qrcode Scanner -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
@@ -24,6 +24,8 @@
     --status-ready: #06C755;
     --status-connecting: #e6a23c;
     --status-active: #1890ff;
+    --call-color: #28a745;
+    --danger-color: #ff4d4f;
 }
 * { box-sizing: border-box; }
 body { 
@@ -69,7 +71,7 @@ button { cursor: pointer; font-family: inherit; }
     font-size: 11px; 
     padding: 4px 10px; 
     border-radius: 12px; 
-    background: #ff4d4f; 
+    background: var(--danger-color); 
     color: white; 
     font-weight: bold;
     display: flex;
@@ -157,17 +159,26 @@ button { cursor: pointer; font-family: inherit; }
     z-index: 10;
 }
 .header-title { font-size: 16px; font-weight: bold; display: flex; align-items: center; gap: 10px; }
-.header-buttons { display: flex; gap: 6px; flex-wrap: wrap; }
+.header-buttons { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .header button { 
     border: 0; 
     background: #f0f2f5; 
-    padding: 6px 10px; 
+    padding: 6px 12px; 
     border-radius: 16px; 
     font-size: 12px; 
     font-weight: bold; 
     transition: background 0.2s;
 }
 .header button:hover { background: #e4e6eb; }
+.header button.call-btn {
+    background: #e6f4ea;
+    color: var(--line-green-dark);
+    border: 1px solid var(--line-green);
+}
+.header button.call-btn:hover {
+    background: var(--line-green);
+    color: white;
+}
 
 .messages { 
     flex: 1; 
@@ -246,7 +257,7 @@ button { cursor: pointer; font-family: inherit; }
     transition: background 0.2s, transform 0.1s; 
 }
 .stamp-btn:active { transform: scale(0.92); }
-.stamp-btn.recording { background: #ff4d4f; color: white; animation: pulse 1s infinite; }
+.stamp-btn.recording { background: var(--danger-color); color: white; animation: pulse 1s infinite; }
 .send-button { 
     background: var(--line-green); 
     color: white; 
@@ -296,8 +307,15 @@ button { cursor: pointer; font-family: inherit; }
 .modal button:hover { background: #e4e6eb; }
 .green { background: var(--line-green) !important; color: white; }
 .green:hover { background: var(--line-green-dark) !important; }
-.red { background: #ff4d4f !important; color: white; }
+.red { background: var(--danger-color) !important; color: white; }
 .red:hover { background: #d9363e !important; }
+
+/* Call UI Styling */
+.call-modal-content { text-align: center; padding: 10px 0; }
+.call-avatar { width: 90px; height: 90px; border-radius: 50%; margin: 15px auto; object-fit: cover; border: 3px solid var(--line-green); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+.call-timer { font-size: 20px; font-weight: bold; color: var(--line-green-dark); margin: 10px 0; font-family: monospace; }
+.call-actions { display: flex; gap: 12px; justify-content: center; margin-top: 20px; }
+.call-btn-action { padding: 12px 24px; border-radius: 30px; font-size: 15px; font-weight: bold; display: flex; align-items: center; gap: 6px; }
 
 /* Alert Box Toast */
 .toast-msg {
@@ -361,6 +379,7 @@ button { cursor: pointer; font-family: inherit; }
         <div class="header">
             <div id="chatTitle" class="header-title">ChatLeaf</div>
             <div class="header-buttons">
+                <button id="voiceCallBtn" class="call-btn" style="display:none;" onclick="startVoiceCall()">📞 電話</button>
                 <button onclick="openSurveyModal()">📋 要望</button>
                 <button onclick="openProfile()">マイページ</button>
                 <button onclick="openStamps('buy')">🛍️ ショップ</button>
@@ -386,14 +405,17 @@ button { cursor: pointer; font-family: inherit; }
     </main>
 </div>
 
+<!-- Audio Element for P2P Voice Call Output -->
+<audio id="remoteAudio" autoplay style="display:none;"></audio>
+
 <div id="toast" class="toast-msg"></div>
 <div id="overlay" class="overlay"><div id="modal" class="modal"></div></div>
 
 <script>
-const STORAGE_KEY = "chatleaf_p2p_v1";
+const STORAGE_KEY = "chatleaf_p2p_v2";
 const DEFAULT_AVATAR = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100'><circle cx='50' cy='50' r='50' fill='%2306C755'/><circle cx='50' cy='40' r='20' fill='%23fff'/><circle cx='50' cy='90' r='35' fill='%23fff'/></svg>";
-const RINRIN_ICON = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100'><circle cx='50' cy='50' r='50' fill='%23ff9a9e'/><circle cx='50' cy='40' r='20' fill='%23fff'/><circle cx='50' cy='90' r='35' fill='%23fff'/></svg>";
-const RINRIN_ID = "bot_rinrin";
+const AI_BOT_ICON = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100'><circle cx='50' cy='50' r='50' fill='%231890ff'/><circle cx='50' cy='38' r='18' fill='%23fff'/><rect x='25' y='60' width='50' height='25' rx='10' fill='%23fff'/><circle cx='43' cy='38' r='4' fill='%231890ff'/><circle cx='57' cy='38' r='4' fill='%231890ff'/></svg>";
+const AI_BOT_ID = "bot_yuushuu_ai";
 
 let localData = JSON.parse(localStorage.getItem(STORAGE_KEY)) || { currentUser: null, cachedState: null };
 let state = localData.cachedState || { users: {}, chats: {}, stamps: {}, homePosts: {}, admins: {}, surveys: {} };
@@ -404,6 +426,13 @@ let connections = {}; // Active PeerJS DataConnections indexed by peerId
 
 let currentChat = null;
 let viewMode = "chat";
+
+// Voice Call state
+let activeCall = null;
+let localAudioStream = null;
+let callTimerInterval = null;
+let callSeconds = 0;
+let isMuted = false;
 
 let mediaRecorder = null;
 let audioChunks = [];
@@ -453,13 +482,13 @@ function readFile(file) {
     });
 }
 
-function ensureRinrin() {
-    if(!state.users[RINRIN_ID]) {
-        state.users[RINRIN_ID] = {
-            id: RINRIN_ID,
-            name: "りんりん 🤖",
-            icon: RINRIN_ICON,
-            coins: 1000,
+function ensureAiBot() {
+    if(!state.users[AI_BOT_ID]) {
+        state.users[AI_BOT_ID] = {
+            id: AI_BOT_ID,
+            name: "優秀AI 🤖",
+            icon: AI_BOT_ICON,
+            coins: 9999,
             isBot: true,
             friends: {}
         };
@@ -467,7 +496,7 @@ function ensureRinrin() {
 }
 
 function init() {
-    ensureRinrin();
+    ensureAiBot();
 
     if (!localData.currentUser || !me()) {
         openAuthModal();
@@ -500,6 +529,11 @@ function initPeerJS() {
 
         peer.on('connection', (conn) => {
             setupConnection(conn);
+        });
+
+        // Handle incoming P2P voice call
+        peer.on('call', (call) => {
+            handleIncomingCall(call);
         });
 
         peer.on('error', (err) => {
@@ -557,14 +591,15 @@ function setupConnection(conn) {
         connections[conn.peer] = conn;
         updatePeerStatusUI();
 
-        // お互いのプロフィール情報を自動送信して友だち追加
+        // Exchange profile info on open connection
         conn.send({
             type: 'PROFILE_EXCHANGE',
             user: {
                 id: me().id,
                 peerId: myPeerId,
                 name: me().name,
-                icon: me().icon
+                icon: me().icon,
+                coins: me().coins || 0
             }
         });
     });
@@ -597,7 +632,7 @@ function handleIncomingPeerData(data, conn) {
                     peerId: remoteUser.peerId,
                     name: remoteUser.name,
                     icon: remoteUser.icon,
-                    coins: 100,
+                    coins: remoteUser.coins || 100,
                     friends: {}
                 };
             } else {
@@ -606,7 +641,6 @@ function handleIncomingPeerData(data, conn) {
                 state.users[remoteUser.id].peerId = remoteUser.peerId;
             }
 
-            // 互いに友だち追加
             if (!me().friends) me().friends = {};
             me().friends[remoteUser.id] = true;
             saveStateLocally();
@@ -647,6 +681,242 @@ function handleIncomingPeerData(data, conn) {
             renderMessages();
         }
     }
+    else if (data.type === 'COIN_UPDATE') {
+        const { userId, coins } = data;
+        if (state.users[userId]) {
+            state.users[userId].coins = coins;
+            if (userId === localData.currentUser) {
+                document.getElementById("coinCount").textContent = coins;
+                showToast(`🪙 管理者によってコインが ${coins} に変更されました`);
+            }
+            saveStateLocally();
+            render();
+        }
+    }
+}
+
+/* Voice Call Implementation */
+async function startVoiceCall() {
+    if (!currentChat || currentChat.startsWith("keep_") || state.users[currentChat]?.isBot) {
+        return showToast("通話対象の友達を選択してください");
+    }
+
+    const friend = state.users[currentChat];
+    if (!friend || !friend.peerId) {
+        return showToast("相手の接続IDが見つかりません");
+    }
+
+    try {
+        localAudioStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    } catch (e) {
+        return showToast("マイクの使用許可が必要です");
+    }
+
+    modal(`
+        <div class="call-modal-content">
+            <h2>📞 発信中...</h2>
+            <img class="call-avatar" src="${escapeHTML(friend.icon || DEFAULT_AVATAR)}">
+            <h3>${escapeHTML(friend.name)}</h3>
+            <p style="font-size:13px; color:#666;">相手の応答を待っています...</p>
+            <div class="call-actions">
+                <button class="red call-btn-action" onclick="endCall()">🔴 通話をキャンセル</button>
+            </div>
+        </div>
+    `);
+
+    activeCall = peer.call(friend.peerId, localAudioStream, {
+        metadata: { callerId: me().id, callerName: me().name, callerPeerId: myPeerId }
+    });
+
+    setupCallListeners(activeCall, friend);
+}
+
+function handleIncomingCall(call) {
+    if (activeCall) {
+        call.close(); // Busy
+        return;
+    }
+
+    const callerPeerId = call.peer;
+    const metadata = call.metadata || {};
+    const callerName = metadata.callerName || "友達";
+    const callerUser = Object.values(state.users).find(u => u.peerId === callerPeerId) || { name: callerName, icon: DEFAULT_AVATAR };
+
+    activeCall = call;
+
+    modal(`
+        <div class="call-modal-content">
+            <h2>📞 着信中</h2>
+            <img class="call-avatar" src="${escapeHTML(callerUser.icon || DEFAULT_AVATAR)}">
+            <h3>${escapeHTML(callerUser.name)} さん</h3>
+            <p style="font-size:13px; color:#666;">音声通話の着信です</p>
+            <div class="call-actions">
+                <button class="green call-btn-action" onclick="acceptIncomingCall()">🟢 応答</button>
+                <button class="red call-btn-action" onclick="endCall()">🔴 拒否</button>
+            </div>
+        </div>
+    `);
+}
+
+async function acceptIncomingCall() {
+    if (!activeCall) return;
+
+    try {
+        localAudioStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    } catch (e) {
+        showToast("マイクの使用許可が必要です");
+        endCall();
+        return;
+    }
+
+    activeCall.answer(localAudioStream);
+    const callerPeerId = activeCall.peer;
+    const callerUser = Object.values(state.users).find(u => u.peerId === callerPeerId) || { name: "友達", icon: DEFAULT_AVATAR };
+
+    setupCallListeners(activeCall, callerUser);
+}
+
+function setupCallListeners(call, friendUser) {
+    call.on('stream', (remoteStream) => {
+        const audioEl = document.getElementById("remoteAudio");
+        if (audioEl) {
+            audioEl.srcObject = remoteStream;
+            audioEl.play().catch(e => console.error("Audio playback error:", e));
+        }
+        showOngoingCallUI(friendUser);
+    });
+
+    call.on('close', () => {
+        endCallCleanup();
+        showToast("通話が終了しました");
+        closeModal();
+    });
+
+    call.on('error', (err) => {
+        console.error("Call error:", err);
+        endCallCleanup();
+        showToast("通話エラーが発生しました");
+        closeModal();
+    });
+}
+
+function showOngoingCallUI(friendUser) {
+    callSeconds = 0;
+    if (callTimerInterval) clearInterval(callTimerInterval);
+
+    callTimerInterval = setInterval(() => {
+        callSeconds++;
+        const mins = String(Math.floor(callSeconds / 60)).padStart(2, '0');
+        const secs = String(callSeconds % 60).padStart(2, '0');
+        const timerEl = document.getElementById("callTimer");
+        if (timerEl) timerEl.textContent = `${mins}:${secs}`;
+    }, 1000);
+
+    modal(`
+        <div class="call-modal-content">
+            <h2>📞 通話中</h2>
+            <img class="call-avatar" src="${escapeHTML(friendUser.icon || DEFAULT_AVATAR)}">
+            <h3>${escapeHTML(friendUser.name)}</h3>
+            <div id="callTimer" class="call-timer">00:00</div>
+            <div class="call-actions">
+                <button id="muteBtn" class="call-btn-action" onclick="toggleMuteCall()">🎤 マイクON</button>
+                <button class="red call-btn-action" onclick="endCall()">🔴 通話を切る</button>
+            </div>
+        </div>
+    `);
+}
+
+function toggleMuteCall() {
+    if (!localAudioStream) return;
+    isMuted = !isMuted;
+    localAudioStream.getAudioTracks().forEach(track => {
+        track.enabled = !isMuted;
+    });
+    const muteBtn = document.getElementById("muteBtn");
+    if (muteBtn) {
+        muteBtn.textContent = isMuted ? "🔇 マイクOFF" : "🎤 マイクON";
+        muteBtn.style.background = isMuted ? "#ffec3d" : "#f0f2f5";
+    }
+}
+
+function endCall() {
+    if (activeCall) {
+        activeCall.close();
+    }
+    endCallCleanup();
+    closeModal();
+}
+
+function endCallCleanup() {
+    if (callTimerInterval) {
+        clearInterval(callTimerInterval);
+        callTimerInterval = null;
+    }
+    if (localAudioStream) {
+        localAudioStream.getTracks().forEach(track => track.stop());
+        localAudioStream = null;
+    }
+    const audioEl = document.getElementById("remoteAudio");
+    if (audioEl) audioEl.srcObject = null;
+    activeCall = null;
+    isMuted = false;
+}
+
+async function handleAiBotResponse(userMessage, type) {
+    const key = [localData.currentUser, AI_BOT_ID].sort().join("_");
+    const historyList = Object.values(state.chats[key] || {});
+
+    let replyText = "";
+
+    try {
+        const systemPrompt = "あなたの名前は『優秀AI』です。何でも分かりやすく親身に教えてくれる賢くフレンドリーなAIアシスタントです。LINEの会話のようにテンポよく短めで親しみやすい口調で回答してください。必要に応じて絵文字を混じえてください。";
+
+        const formattedMessages = [
+            { role: "system", content: systemPrompt }
+        ];
+
+        historyList.slice(-6).forEach(m => {
+            if(!m.unsent) {
+                formattedMessages.push({
+                    role: m.from === AI_BOT_ID ? "assistant" : "user",
+                    content: m.type === "text" ? m.content : `(${m.type}を送りました)`
+                });
+            }
+        });
+
+        const response = await fetch("https://text.pollinations.ai/", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                messages: formattedMessages,
+                model: "openai"
+            })
+        });
+
+        if (response.ok) {
+            replyText = await response.text();
+        } else {
+            throw new Error("AI Endpoint Error");
+        }
+    } catch (error) {
+        console.error("AI Bot Error:", error);
+        replyText = "ごめんなさい！ちょっと応答に時間がかかっちゃいました💦 もう一度話しかけてね！";
+    }
+
+    const botMsg = {
+        id: createId(),
+        from: AI_BOT_ID,
+        content: replyText.trim(),
+        type: "text",
+        time: new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}),
+        unsent: false
+    };
+
+    if(!state.chats[key]) state.chats[key] = {};
+    state.chats[key][botMsg.id] = botMsg;
+
+    saveStateLocally();
+    renderMessages();
 }
 
 function openAuthModal() {
@@ -699,7 +969,7 @@ async function register() {
         name: name,
         icon: icon,
         coins: 100,
-        friends: { [RINRIN_ID]: true }
+        friends: { [AI_BOT_ID]: true }
     };
 
     state.users[uid] = newUser;
@@ -739,8 +1009,6 @@ function openProfile() {
 }
 
 function openMyQRModal() {
-    // 【重要改善】QRコードの文字列を非常に短い PeerID のみに限定
-    // 例: "leaf-a1b2c3" -> マス目が非常に粗くなりカメラで爆速読み取り可能
     const shortPeerId = myPeerId || me().peerId;
 
     modal(`
@@ -762,7 +1030,7 @@ function openMyQRModal() {
                 text: shortPeerId,
                 width: 200,
                 height: 200,
-                correctLevel: QRCode.CorrectLevel.L // エラー訂正レベルL（最もドット数が少ない粗いマス目）
+                correctLevel: QRCode.CorrectLevel.L
             });
         }
     }, 100);
@@ -806,8 +1074,8 @@ function openQRScannerModal() {
             (decodedText) => {
                 handleScannedQRCode(decodedText);
             },
-            (errorMessage) => {}
-        ).catch(err => {
+            () => {}
+        ).catch(() => {
             showToast("カメラの起動に失敗しました");
         });
     }, 100);
@@ -828,8 +1096,6 @@ function handleScannedQRCode(scannedText) {
 
     if (!scannedText) return;
     scannedText = scannedText.trim();
-
-    // 短いIDであれば即座にP2P接続
     connectToPeer(scannedText);
 }
 
@@ -850,6 +1116,14 @@ function render() {
 
     renderFriends();
     renderStampPicker();
+
+    // Show/hide voice call button based on active chat
+    const voiceCallBtn = document.getElementById("voiceCallBtn");
+    if (currentChat && !currentChat.startsWith("keep_") && !state.users[currentChat]?.isBot) {
+        voiceCallBtn.style.display = "inline-block";
+    } else {
+        voiceCallBtn.style.display = "none";
+    }
 
     if(viewMode === "home") renderHome();
     else renderMessages();
@@ -1069,7 +1343,6 @@ function toggleReaction(msgId, emojiKey) {
         msg.reactions[emojiKey].push(uid);
     }
 
-    // P2P 同期
     if (currentChat && state.users[currentChat]?.peerId) {
         const targetPeerId = state.users[currentChat].peerId;
         if (connections[targetPeerId]) {
@@ -1125,7 +1398,7 @@ function pushMessage(content, type="text") {
         if(!state.chats[key]) state.chats[key] = {};
         state.chats[key][msg.id] = msg;
 
-        // P2P リアルタイムデータ送信
+        // P2P Data Send
         if (state.users[currentChat] && state.users[currentChat].peerId) {
             const targetPeerId = state.users[currentChat].peerId;
             if (connections[targetPeerId]) {
@@ -1136,9 +1409,9 @@ function pushMessage(content, type="text") {
             }
         }
 
-        // AIボットとの会話
-        if(currentChat === RINRIN_ID) {
-            handleRinrinAI(content, type);
+        // AI Bot logic
+        if(currentChat === AI_BOT_ID) {
+            handleAiBotResponse(content, type);
         }
     }
 
@@ -1147,63 +1420,6 @@ function pushMessage(content, type="text") {
         user.coins = (user.coins || 0) + 5;
         document.getElementById("coinCount").textContent = user.coins;
     }
-
-    saveStateLocally();
-    renderMessages();
-}
-
-async function handleRinrinAI(userMessage, type) {
-    const key = [localData.currentUser, RINRIN_ID].sort().join("_");
-    const historyList = Object.values(state.chats[key] || {});
-
-    let replyText = "";
-
-    try {
-        const systemPrompt = "あなたの名前は『りんりん』です。LINEで友達と話しているような、明るくフレンドリーで親しみやすい口調（1〜3文章程度）で返答してください。絵文字を効果的に使い、相手の文脈に沿った自然な相槌を行ってください。";
-
-        const formattedMessages = [
-            { role: "system", content: systemPrompt }
-        ];
-
-        historyList.slice(-6).forEach(m => {
-            if(!m.unsent) {
-                formattedMessages.push({
-                    role: m.from === RINRIN_ID ? "assistant" : "user",
-                    content: m.type === "text" ? m.content : `(${m.type}を送りました)`
-                });
-            }
-        });
-
-        const response = await fetch("https://text.pollinations.ai/", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                messages: formattedMessages,
-                model: "openai"
-            })
-        });
-
-        if (response.ok) {
-            replyText = await response.text();
-        } else {
-            throw new Error("AIエラー");
-        }
-    } catch (error) {
-        console.error("AI Error:", error);
-        replyText = "ごめんね、ちょっと電波が悪くて聞き逃しちゃった！もう一度話しかけてくれる？💦";
-    }
-
-    const botMsg = {
-        id: createId(),
-        from: RINRIN_ID,
-        content: replyText.trim(),
-        type: "text",
-        time: new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}),
-        unsent: false
-    };
-
-    if(!state.chats[key]) state.chats[key] = {};
-    state.chats[key][botMsg.id] = botMsg;
 
     saveStateLocally();
     renderMessages();
@@ -1524,7 +1740,7 @@ function renderHome() {
     const isAdmin = state.admins[localData.currentUser];
     const posts = Object.values(state.homePosts).reverse();
 
-    let html = `<div class="home-banner"><h1 style="margin:0 0 6px; font-size:20px;">🌿 ChatLeaf Official</h1><p style="margin:0; font-size:13px; opacity:0.9;">P2Pリアルタイムトーク ＆ 公式掲示板</p></div>`;
+    let html = `<div class="home-banner"><h1 style="margin:0 0 6px; font-size:20px;">🌿 ChatLeaf Official</h1><p style="margin:0; font-size:13px; opacity:0.9;">P2Pリアルタイムトーク ＆ 通話アプリ</p></div>`;
     posts.forEach(p => {
         html += `
             <div class="home-post">
@@ -1598,18 +1814,36 @@ function adminLogin() {
 }
 
 function adminPanel() {
-    const allUsers = Object.values(state.users);
+    const allUsers = Object.values(state.users).filter(u => !u.isBot);
     const surveysList = Object.values(state.surveys || {}).reverse();
     const allStamps = Object.values(state.stamps || {});
 
     modal(`
         <h2>👑 管理者コントロールパネル</h2>
+
+        <div style="background:#f0f7ff; padding:12px; border-radius:10px; margin-bottom:15px; border:1px solid #bae7ff;">
+            <h3 style="margin:0 0 8px 0; font-size:13px; color:#0050b3;">🪙 ユーザーコイン管理 (${allUsers.length}名)</h3>
+            <div style="max-height:160px; overflow-y:auto; display:flex; flex-direction:column; gap:6px;">
+                ${allUsers.map(u => `
+                    <div class="user-card">
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <img src="${escapeHTML(u.icon)}" style="width:28px;height:28px;border-radius:50%;object-fit:cover;">
+                            <div>
+                                <div style="font-size:12px; font-weight:bold;">${escapeHTML(u.name)}</div>
+                                <div style="font-size:10px; color:#666;">🪙 <span id="coinVal_${u.id}">${u.coins || 0}</span></div>
+                            </div>
+                        </div>
+                        <button class="green" style="font-size:11px; padding:4px 10px;" onclick="adminEditCoins('${u.id}', '${escapeHTML(u.name)}', ${u.coins || 0})">🪙 コイン変更</button>
+                    </div>
+                `).join('')}
+            </div>
+        </div>
         
         <div style="background:#fff0f0; padding:12px; border-radius:10px; margin-bottom:15px; border:1px solid #ffccc7;">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
                 <h3 style="margin:0; font-size:13px; color:#cf1322;">🛍️ ショップアイテム管理 (${allStamps.length}件)</h3>
             </div>
-            <div style="max-height:140px; overflow-y:auto;">
+            <div style="max-height:120px; overflow-y:auto;">
                 ${allStamps.map(s => `
                     <div style="display:flex; align-items:center; justify-content:space-between; background:white; padding:6px 10px; border-radius:6px; margin-bottom:6px;">
                         <span style="font-size:12px; font-weight:bold;">${escapeHTML(s.name)}</span>
@@ -1621,7 +1855,7 @@ function adminPanel() {
 
         <div style="background:#fff8e7; padding:12px; border-radius:10px; margin-bottom:15px; border:1px solid #ffe58f;">
             <h3 style="margin:0 0 8px 0; font-size:13px; color:#d48806;">📋 届いた要望 (${surveysList.length}件)</h3>
-            <div style="max-height:140px; overflow-y:auto;">
+            <div style="max-height:120px; overflow-y:auto;">
                 ${surveysList.map(s => `
                     <div class="survey-card">
                         <div style="font-size:12px; font-weight:bold;">${escapeHTML(s.content)}</div>
@@ -1638,6 +1872,34 @@ function adminPanel() {
 
         <button style="width:100%;" onclick="closeModal()">閉じる</button>
     `, true);
+}
+
+function adminEditCoins(targetUid, targetName, currentCoins) {
+    const inputVal = prompt(`${targetName} さんの新しいコイン数を入力してください:`, currentCoins);
+    if (inputVal === null) return;
+
+    const newCoins = parseInt(inputVal, 10);
+    if (isNaN(newCoins) || newCoins < 0) {
+        return showToast("有効な数値を入力してください");
+    }
+
+    if (state.users[targetUid]) {
+        state.users[targetUid].coins = newCoins;
+        saveStateLocally();
+
+        // Broadcast or send P2P sync packet to active connections
+        Object.values(connections).forEach(conn => {
+            conn.send({
+                type: 'COIN_UPDATE',
+                userId: targetUid,
+                coins: newCoins
+            });
+        });
+
+        showToast(`${targetName} さんのコインを ${newCoins} に更新しました`);
+        adminPanel();
+        render();
+    }
 }
 
 function deleteSingleStamp(stampId) {
