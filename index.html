@@ -355,66 +355,96 @@ function logout() {
     openAuthModal();
 }
 
-/* --- 合言葉で友だち追加機能 --- */
+/* --- 合言葉で友だち追加機能（即時・確実に接続） --- */
 function openAddFriendModal() {
     modal(`
         <h2>🔑 合言葉で友だち追加</h2>
-        <p style="font-size:12px; color:#666; margin-bottom:12px;">友達と同じ「合言葉」を入力すると、お互いの友だちリストに自動で追加されます。</p>
+        <p style="font-size:12px; color:#666; margin-bottom:12px;">友達と同じ「合言葉」を入力すると、即座にお互いの友だちリストに追加されてトークが始まります。</p>
         <label>合言葉を入力</label>
         <input id="secretCodeInput" placeholder="例：ひみつの部屋123" onkeydown="if(event.key==='Enter') addFriendByCode()">
-        <button class="green" style="width:100%; padding:10px; margin-top:10px;" onclick="addFriendByCode()">友だち追加する</button>
+        <button class="green" style="width:100%; padding:10px; margin-top:10px;" onclick="addFriendByCode()">接続・友だち追加する</button>
         <button style="width:100%; margin-top:6px;" onclick="closeModal()">キャンセル</button>
     `);
+    setTimeout(() => {
+        const inp = document.getElementById("secretCodeInput");
+        if(inp) inp.focus();
+    }, 100);
 }
 
-function addFriendByCode() {
+async function addFriendByCode() {
     const codeInput = document.getElementById("secretCodeInput");
-    const code = codeInput ? codeInput.value.trim() : "";
-    if (!code) return alert("合言葉を入力してください");
+    const rawCode = codeInput ? codeInput.value.trim() : "";
+    if (!rawCode) return alert("合言葉を入力してください");
 
+    const code = rawCode.toLowerCase();
     const myUid = localData.currentUser;
+
+    if (!myUid || !me()) return alert("ログイン状態を確認してください");
+
     if (!state.secretCodes) state.secretCodes = {};
     if (!state.secretCodes[code]) state.secretCodes[code] = {};
 
-    // 自分のUIDを合言葉に追加
-    state.secretCodes[code][myUid] = true;
-
-    // 同じ合言葉に登録されている他のユーザーIDを取得
-    const memberUids = Object.keys(state.secretCodes[code]);
-
-    let addedCount = 0;
-    memberUids.forEach(uid => {
-        if (uid === myUid) return;
-        
-        // 自分と相手の互いのfriendsリストに追加
-        if (!me().friends) me().friends = {};
-        if (!state.users[uid]) return;
-        if (!state.users[uid].friends) state.users[uid].friends = {};
-
-        if (!me().friends[uid]) {
-            me().friends[uid] = true;
-            state.users[uid].friends[myUid] = true;
-            addedCount++;
-
-            if (isOnline) {
-                db.ref(`users/${myUid}/friends/${uid}`).set(true);
-                db.ref(`users/${uid}/friends/${myUid}`).set(true);
-            }
-        }
-    });
+    let matchedUserIds = [];
 
     if (isOnline) {
-        db.ref(`secretCodes/${code}/${myUid}`).set(true);
+        try {
+            // Firebaseから合言葉ノードの最新メンバー一覧を取得
+            const snap = await db.ref('secretCodes/' + code).once('value');
+            const codeMembers = snap.val() || {};
+            
+            // 自分以外の登録済みユーザーのUIDを配列で取得
+            matchedUserIds = Object.keys(codeMembers).filter(uid => uid !== myUid);
+
+            // 自分を合言葉に登録
+            await db.ref(`secretCodes/${code}/${myUid}`).set(true);
+
+            // お互いの友だちリスト（friends）をマルチパス更新で一括・即時に反映
+            const updates = {};
+            matchedUserIds.forEach(targetUid => {
+                updates[`users/${myUid}/friends/${targetUid}`] = true;
+                updates[`users/${targetUid}/friends/${myUid}`] = true;
+
+                // ローカルのメモリ状態も同時に即時更新
+                if (!me().friends) me().friends = {};
+                me().friends[targetUid] = true;
+                if (state.users[targetUid]) {
+                    if (!state.users[targetUid].friends) state.users[targetUid].friends = {};
+                    state.users[targetUid].friends[myUid] = true;
+                }
+            });
+
+            if (Object.keys(updates).length > 0) {
+                await db.ref().update(updates);
+            }
+        } catch (e) {
+            console.error("合言葉接続エラー:", e);
+        }
+    } else {
+        // オフライン時のローカル保存処理
+        state.secretCodes[code][myUid] = true;
+        matchedUserIds = Object.keys(state.secretCodes[code]).filter(uid => uid !== myUid);
+
+        matchedUserIds.forEach(targetUid => {
+            if (!me().friends) me().friends = {};
+            me().friends[targetUid] = true;
+            if (state.users[targetUid]) {
+                if (!state.users[targetUid].friends) state.users[targetUid].friends = {};
+                state.users[targetUid].friends[myUid] = true;
+            }
+        });
     }
 
     saveStateLocally();
     closeModal();
     render();
 
-    if (addedCount > 0) {
-        alert(`合言葉「${code}」で ${addedCount} 人の友だちが追加されました！`);
+    if (matchedUserIds.length > 0) {
+        const lastFriendId = matchedUserIds[matchedUserIds.length - 1];
+        const friendName = state.users[lastFriendId]?.name || "お友達";
+        alert(`合言葉「${rawCode}」で【${friendName}】さんと繋がりました！`);
+        openChat(lastFriendId); // 繋がった瞬間にチャット画面を開く
     } else {
-        alert(`合言葉「${code}」を登録しました！相手も同じ合言葉を入力すると友だちに追加されます。`);
+        alert(`合言葉「${rawCode}」を登録しました！\n相手も同じ合言葉を入力した瞬間に自動でトークに接続されます。`);
     }
 }
 
@@ -448,11 +478,10 @@ function renderFriends() {
     const list = document.getElementById("friendList");
     const myFriendsObj = me()?.friends || {};
 
-    // 自分以外で、myFriendsObjに含まれるユーザーのみ表示
     const friends = Object.values(state.users).filter(u => 
         u.id !== localData.currentUser && 
         !u.blocked && 
-        (myFriendsObj[u.id] || u.isBot) // りんりんBotまたは友だち登録済みユーザー
+        (myFriendsObj[u.id] || u.isBot)
     );
 
     list.innerHTML = friends.map(u => `
