@@ -709,56 +709,6 @@ function handleIncomingPeerData(data, conn) {
             renderMessages();
         }
     }
-    else if (data.type === 'HOME_POST_ADDED') {
-        if (data.post) {
-            if (!state.homePosts) state.homePosts = {};
-            state.homePosts[data.post.id] = data.post;
-            saveStateLocally();
-            if (viewMode === 'home') renderHome();
-            showToast(`📢 新しいホームページ投稿があります: ${data.post.title}`);
-        }
-    }
-    else if (data.type === 'HOME_POST_DELETED') {
-        if (data.postId && state.homePosts) {
-            delete state.homePosts[data.postId];
-            saveStateLocally();
-            if (viewMode === 'home') renderHome();
-        }
-    }
-    else if (data.type === 'STAMP_ADDED') {
-        if (data.stamp) {
-            if (!state.stamps) state.stamps = {};
-            state.stamps[data.stamp.id] = data.stamp;
-            saveStateLocally();
-            renderStampPicker();
-            showToast(`🛍️ 新しいショップアイテムが追加されました: ${data.stamp.name}`);
-        }
-    }
-    else if (data.type === 'STAMP_BOUGHT') {
-        if (data.stampId && data.buyerId) {
-            const stamp = state.stamps?.[data.stampId];
-            if (stamp) {
-                let ownedList = getOwnedArray(stamp);
-                if (!ownedList.includes(data.buyerId)) {
-                    ownedList.push(data.buyerId);
-                    stamp.owned = ownedList;
-                }
-            }
-            if (data.ownerId && data.ownerCoins && state.users[data.ownerId]) {
-                state.users[data.ownerId].coins = data.ownerCoins;
-            }
-            saveStateLocally();
-            render();
-        }
-    }
-    else if (data.type === 'STAMP_DELETED') {
-        if (data.stampId && state.stamps) {
-            delete state.stamps[data.stampId];
-            saveStateLocally();
-            renderStampPicker();
-            render();
-        }
-    }
     else if (data.type === 'SURVEY_SUBMISSION') {
         if (data.survey) {
             if (!state.surveys) state.surveys = {};
@@ -779,6 +729,62 @@ function handleIncomingPeerData(data, conn) {
             if (state.admins[localData.currentUser] && document.getElementById("overlay").style.display === "flex") {
                 adminPanel();
             }
+        }
+    }
+    else if (data.type === 'STAMP_ADDED') {
+        if (data.stamp) {
+            if (!state.stamps) state.stamps = {};
+            state.stamps[data.stamp.id] = data.stamp;
+            saveStateLocally();
+            renderStampPicker();
+            showToast(`🛍️ 新しいショップアイテムが共有されました: ${data.stamp.name}`);
+            if (document.getElementById("overlay").style.display === "flex") {
+                openStamps('buy');
+            }
+        }
+    }
+    else if (data.type === 'STAMP_BOUGHT') {
+        const { stampId, owned, sellerId, sellerCoins } = data;
+        if (state.stamps && state.stamps[stampId]) {
+            state.stamps[stampId].owned = owned;
+        }
+        if (sellerId && state.users[sellerId] && sellerCoins !== undefined) {
+            state.users[sellerId].coins = sellerCoins;
+        }
+        saveStateLocally();
+        render();
+        if (document.getElementById("overlay").style.display === "flex") {
+            openStamps('buy');
+        }
+        showToast("🛍️ ショップアイテムの購入情報が同期されました");
+    }
+    else if (data.type === 'STAMP_DELETED') {
+        if (data.stampId && state.stamps) {
+            delete state.stamps[data.stampId];
+            saveStateLocally();
+            renderStampPicker();
+            renderMessages();
+            if (document.getElementById("overlay").style.display === "flex") {
+                openStamps('buy');
+            }
+            showToast("🛍️ アイテムがショップから削除されました");
+        }
+    }
+    else if (data.type === 'HOME_POST_ADDED') {
+        if (data.post) {
+            if (!state.homePosts) state.homePosts = {};
+            state.homePosts[data.post.id] = data.post;
+            saveStateLocally();
+            if (viewMode === 'home') renderHome();
+            showToast(`📢 ホームに新しいお知らせが届きました: ${data.post.title}`);
+        }
+    }
+    else if (data.type === 'HOME_POST_DELETED') {
+        if (data.postId && state.homePosts) {
+            delete state.homePosts[data.postId];
+            saveStateLocally();
+            if (viewMode === 'home') renderHome();
+            showToast("📢 ホームのお知らせが更新されました");
         }
     }
     else if (data.type === 'COIN_UPDATE') {
@@ -1488,12 +1494,14 @@ function pushMessage(content, type="text") {
         if(!state.chats[chatKey]) state.chats[chatKey] = {};
         state.chats[chatKey][msg.id] = msg;
 
+        // Broadcast chat message packet to all connected P2P peers
         broadcastToPeers({
             type: 'CHAT_MSG',
             chatKey: chatKey,
             message: msg
         });
 
+        // Trigger AI Bot response if chatting with bot
         if(currentChat === AI_BOT_ID) {
             handleAiBotResponse(content, type);
         }
@@ -1752,7 +1760,7 @@ async function sellStamp() {
 
     state.stamps[stamp.id] = stamp;
 
-    // 出品を接続端末全員へリアルタイム共有
+    // Broadcast newly added stamp to all connected peers
     broadcastToPeers({
         type: 'STAMP_ADDED',
         stamp: stamp
@@ -1776,19 +1784,20 @@ function buyStamp(id) {
     ownedList.push(localData.currentUser);
     s.owned = ownedList;
 
-    let ownerCoins = 0;
+    let sellerCoinsUpdated = undefined;
     if(state.users[s.owner]) {
         state.users[s.owner].coins = (state.users[s.owner].coins || 0) + s.price;
-        ownerCoins = state.users[s.owner].coins;
+        sellerCoinsUpdated = state.users[s.owner].coins;
     }
 
-    // 購入情報を接続端末全員へリアルタイム共有
+    // Broadcast purchase packet to sync ownership and seller coins across network
     broadcastToPeers({
         type: 'STAMP_BOUGHT',
-        stampId: s.id,
+        stampId: id,
         buyerId: localData.currentUser,
-        ownerId: s.owner,
-        ownerCoins: ownerCoins
+        owned: s.owned,
+        sellerId: s.owner,
+        sellerCoins: sellerCoinsUpdated
     });
 
     showToast("アイテムを購入しました！");
@@ -1833,6 +1842,7 @@ function submitSurvey() {
 
     saveStateLocally();
 
+    // Broadcast survey submission packet to all connected peers
     broadcastToPeers({
         type: 'SURVEY_SUBMISSION',
         survey: item
@@ -1887,28 +1897,30 @@ async function submitHomePost() {
     };
 
     state.homePosts[newPost.id] = newPost;
+    saveStateLocally();
 
-    // ホーム画面投稿を接続端末全員へリアルタイム共有
+    // Broadcast newly added home post to all connected peers
     broadcastToPeers({
         type: 'HOME_POST_ADDED',
         post: newPost
     });
 
-    saveStateLocally();
+    showToast("ホームページに投稿しました！全ユーザーに即座に共有されます");
     closeModal();
     renderHome();
 }
 
 function deleteHomePost(id) {
     delete state.homePosts[id];
+    saveStateLocally();
 
-    // 削除を接続端末全員へリアルタイム共有
+    // Broadcast home post deletion to all connected peers
     broadcastToPeers({
         type: 'HOME_POST_DELETED',
         postId: id
     });
 
-    saveStateLocally();
+    showToast("ホームの投稿を削除しました");
     renderHome();
 }
 
@@ -1955,7 +1967,7 @@ function adminPanel() {
                                 <div style="font-size:10px; color:#666;">🪙 <span id="coinVal_${u.id}">${u.coins || 0}</span></div>
                             </div>
                         </div>
-                        <button class="green" style="font-size:11px; padding:4px 10px;" onclick="adminEditCoins('${u.id}', '${escapeHTML(u.name)}',${u.coins || 0})">🪙 コイン変更</button>
+                        <button class="green" style="font-size:11px; padding:4px 10px;" onclick="adminEditCoins('${u.id}', '${escapeHTML(u.name)}', ${u.coins || 0})">🪙 コイン変更</button>
                     </div>
                 `).join('')}
             </div>
@@ -2005,6 +2017,7 @@ function deleteSurvey(surveyId) {
         delete state.surveys[surveyId];
         saveStateLocally();
 
+        // Broadcast survey delete packet to all connected peers
         broadcastToPeers({
             type: 'SURVEY_DELETE',
             surveyId: surveyId
@@ -2028,6 +2041,7 @@ function adminEditCoins(targetUid, targetName, currentCoins) {
         state.users[targetUid].coins = newCoins;
         saveStateLocally();
 
+        // Broadcast coin update packet to all connected peers
         broadcastToPeers({
             type: 'COIN_UPDATE',
             userId: targetUid,
@@ -2042,14 +2056,15 @@ function adminEditCoins(targetUid, targetName, currentCoins) {
 
 function deleteSingleStamp(stampId) {
     delete state.stamps[stampId];
-    
-    // アイテム削除を接続端末全員へリアルタイム共有
+    saveStateLocally();
+
+    // Broadcast stamp deletion packet to all connected peers
     broadcastToPeers({
         type: 'STAMP_DELETED',
         stampId: stampId
     });
 
-    saveStateLocally();
+    showToast("ショップアイテムを削除しました");
     adminPanel();
     render();
 }
